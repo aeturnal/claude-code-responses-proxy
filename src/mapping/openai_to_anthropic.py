@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 def _parse_tool_input(arguments: Any) -> Any:
@@ -37,6 +37,32 @@ def derive_stop_reason(response: Dict[str, Any]) -> str:
     return "end_turn"
 
 
+def normalize_openai_usage(usage: Optional[Dict[str, Any]]) -> Dict[str, int]:
+    if not isinstance(usage, dict):
+        usage = {}
+    input_tokens = usage.get("input_tokens")
+    if not isinstance(input_tokens, int):
+        input_tokens = 0
+    output_tokens = usage.get("output_tokens")
+    if not isinstance(output_tokens, int):
+        output_tokens = 0
+    details = usage.get("input_tokens_details")
+    cached_tokens = 0
+    if isinstance(details, dict):
+        cached_value = details.get("cached_tokens")
+        if isinstance(cached_value, int):
+            cached_tokens = cached_value
+    uncached_input_tokens = input_tokens - cached_tokens
+    if uncached_input_tokens < 0:
+        uncached_input_tokens = 0
+    return {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": cached_tokens,
+        "input_tokens": uncached_input_tokens,
+        "output_tokens": output_tokens,
+    }
+
+
 def map_openai_response_to_anthropic(response: Dict[str, Any]) -> Dict[str, Any]:
     """Convert OpenAI Responses output into Anthropic message response."""
 
@@ -68,4 +94,5 @@ def map_openai_response_to_anthropic(response: Dict[str, Any]) -> Dict[str, Any]
         "role": "assistant",
         "content": content_blocks,
         "stop_reason": derive_stop_reason(response),
+        "usage": normalize_openai_usage(response.get("usage")),
     }

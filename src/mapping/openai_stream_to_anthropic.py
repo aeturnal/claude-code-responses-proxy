@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Dict, Optional, Tuple, cast
 
-from .openai_to_anthropic import derive_stop_reason
+from .openai_to_anthropic import derive_stop_reason, normalize_openai_usage
 
 
 def format_sse(event: str, payload: Dict[str, Any]) -> str:
@@ -110,6 +110,7 @@ def _build_message_start_payload(response: Dict[str, Any]) -> Dict[str, Any]:
         "content": [],
         "stop_reason": None,
         "stop_sequence": None,
+        "usage": normalize_openai_usage(response.get("usage")),
     }
     if response.get("id"):
         message["id"] = response["id"]
@@ -529,14 +530,15 @@ async def translate_openai_events(
             response = _response_from_event(payload) or payload
             stop_reason = derive_stop_reason(response)
             usage = response.get("usage") or payload.get("usage")
-            if usage is not None:
-                state.last_usage = usage
+            normalized_usage = normalize_openai_usage(
+                usage if isinstance(usage, dict) else None
+            )
+            state.last_usage = normalized_usage
             payload: Dict[str, Any] = {
                 "type": "message_delta",
                 "delta": {"stop_reason": stop_reason, "stop_sequence": None},
+                "usage": normalized_usage,
             }
-            if usage is not None:
-                payload["usage"] = usage
             yield format_sse("message_delta", payload)
             yield format_sse("message_stop", {"type": "message_stop"})
             continue
