@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 import httpx
+from asgi_correlation_id import correlation_id
 
 from src.config import OPENAI_BASE_URL, require_openai_api_key
 
@@ -30,6 +31,9 @@ async def create_openai_response(payload: Dict[str, Any]) -> Dict[str, Any]:
     api_key = require_openai_api_key()
     url = f"{OPENAI_BASE_URL}/responses"
     headers = {"Authorization": f"Bearer {api_key}"}
+    upstream_correlation_id = correlation_id.get()
+    if upstream_correlation_id:
+        headers["X-Correlation-ID"] = upstream_correlation_id
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(url, json=payload, headers=headers)

@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter
+import structlog
+from asgi_correlation_id import correlation_id
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from src.errors.anthropic_error import build_anthropic_error, map_openai_error_type
 from src.mapping.anthropic_to_openai import map_anthropic_request_to_openai
 from src.mapping.openai_to_anthropic import map_openai_response_to_anthropic
+from src.observability.logging import logging_enabled
+from src.observability.redaction import (
+    redact_anthropic_response,
+    redact_messages_request,
+    redact_openai_error,
+)
 from src.schema.anthropic import MessagesRequest
 from src.transport.openai_client import OpenAIUpstreamError, create_openai_response
 
 router = APIRouter()
+logger = structlog.get_logger(__name__)
 
 
 def _extract_openai_error_fields(openai_error: Any) -> Dict[str, Optional[str]]:
@@ -36,9 +46,30 @@ def _normalize_openai_payload(payload: Any) -> Dict[str, Any]:
     return payload
 
 
+def _get_correlation_id(request: Request) -> Optional[str]:
+    return getattr(request.state, "correlation_id", None) or correlation_id.get()
+
+
+def _duration_ms(request: Request) -> Optional[int]:
+    start_time = getattr(request.state, "start_time", None)
+    if start_time is None:
+        return None
+    return int((time.perf_counter() - start_time) * 1000)
+
+
 @router.post("/v1/messages")
-async def create_message(request: MessagesRequest) -> Dict[str, Any]:
+async def create_message(http_request: Request, request: MessagesRequest) -> Any:
     """Translate Anthropic Messages request into OpenAI Responses output."""
+
+    correlation_id_value = _get_correlation_id(http_request)
+    if logging_enabled():
+        logger.info(
+            "request",
+            endpoint=str(http_request.url.path),
+            method=http_request.method,
+            correlation_id=correlation_id_value,
+            payload=redact_messages_request(request),
+        )
 
     openai_request = map_anthropic_request_to_openai(request)
     payload = _normalize_openai_payload(openai_request)
@@ -56,6 +87,26 @@ async def create_message(request: MessagesRequest) -> Dict[str, Any]:
             code=error_fields.get("code"),
             openai_error=exc.error_payload,
         )
+        if logging_enabled():
+            logger.info(
+                "error",
+                endpoint=str(http_request.url.path),
+                status_code=exc.status_code,
+                duration_ms=_duration_ms(http_request),
+                correlation_id=correlation_id_value,
+                payload=redact_openai_error(exc.error_payload),
+            )
         return JSONResponse(status_code=exc.status_code, content=error_payload)
 
-    return map_openai_response_to_anthropic(response)
+    response_payload = map_openai_response_to_anthropic(response)
+    if logging_enabled():
+        logger.info(
+            "response",
+            endpoint=str(http_request.url.path),
+            status_code=200,
+            duration_ms=_duration_ms(http_request),
+            correlation_id=correlation_id_value,
+            token_usage=response.get("usage") if isinstance(response, dict) else None,
+            payload=redact_anthropic_response(response_payload),
+        )
+    return response_payload
