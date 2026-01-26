@@ -15,6 +15,7 @@ from src.schema.anthropic import (
     ToolUseBlock,
 )
 from src.schema.openai import (
+    FunctionDefinition,
     FunctionTool,
     InputMessageItem,
     InputTextItem,
@@ -99,9 +100,11 @@ def map_anthropic_request_to_openai(request: MessagesRequest) -> OpenAIResponses
     if request.tools:
         tools = [
             FunctionTool(
-                name=tool.name,
-                description=tool.description,
-                parameters=tool.parameters,
+                function=FunctionDefinition(
+                    name=tool.name,
+                    description=tool.description,
+                    parameters=tool.parameters,
+                ),
                 strict=False,
             )
             for tool in request.tools

@@ -11,6 +11,7 @@ from asgi_correlation_id import correlation_id
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from src.config import MissingOpenAIAPIKeyError
 from src.errors.anthropic_error import build_anthropic_error, map_openai_error_type
 from src.mapping.anthropic_to_openai import map_anthropic_request_to_openai
 from src.mapping.openai_stream_to_anthropic import translate_openai_events
@@ -100,6 +101,24 @@ async def create_message(http_request: Request, request: MessagesRequest) -> Any
     payload = _normalize_openai_payload(openai_request)
     try:
         response = await create_openai_response(payload)
+    except MissingOpenAIAPIKeyError:
+        openai_error = {"error": {"message": "OPENAI_API_KEY is required"}}
+        error_payload = build_anthropic_error(
+            401,
+            "authentication_error",
+            "OPENAI_API_KEY is required",
+            openai_error=openai_error,
+        )
+        if logging_enabled():
+            logger.info(
+                "error",
+                endpoint=str(http_request.url.path),
+                status_code=401,
+                duration_ms=_duration_ms(http_request),
+                correlation_id=correlation_id_value,
+                payload=redact_openai_error(openai_error),
+            )
+        return JSONResponse(status_code=401, content=error_payload)
     except OpenAIUpstreamError as exc:
         error_fields = _extract_openai_error_fields(exc.error_payload)
         error_type = map_openai_error_type(exc.error_payload)
@@ -168,6 +187,25 @@ async def stream_messages(
                     if isinstance(usage, dict):
                         latest_usage = usage
                 yield sse_event
+        except MissingOpenAIAPIKeyError:
+            stream_failed = True
+            openai_error = {"error": {"message": "OPENAI_API_KEY is required"}}
+            error_payload = build_anthropic_error(
+                401,
+                "authentication_error",
+                "OPENAI_API_KEY is required",
+                openai_error=openai_error,
+            )
+            if logging_enabled():
+                logger.info(
+                    "error",
+                    endpoint=str(http_request.url.path),
+                    status_code=401,
+                    duration_ms=_duration_ms(http_request),
+                    correlation_id=correlation_id_value,
+                    payload=redact_openai_error(openai_error),
+                )
+            yield _format_sse_error(error_payload)
         except OpenAIUpstreamError as exc:
             stream_failed = True
             error_fields = _extract_openai_error_fields(exc.error_payload)

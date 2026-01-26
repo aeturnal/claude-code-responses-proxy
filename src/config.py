@@ -25,10 +25,14 @@ OBS_REDACTION_MODE = os.getenv("OBS_REDACTION_MODE", "full")
 OBS_LOG_PRETTY = _env_bool("OBS_LOG_PRETTY", True)
 
 
+class MissingOpenAIAPIKeyError(ValueError):
+    """Raised when the OpenAI API key is missing."""
+
+
 def require_openai_api_key() -> str:
     """Return the API key or raise if missing."""
     if not OPENAI_API_KEY:
-        raise ValueError("OPENAI_API_KEY is required")
+        raise MissingOpenAIAPIKeyError("OPENAI_API_KEY is required")
     return OPENAI_API_KEY
 
 
