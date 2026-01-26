@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-01-25)
 
 **Core value:** Claude Code works seamlessly against OpenAI models as if it were talking to Anthropic.
-**Current focus:** Phase 3 — Privacy-First Observability
+**Current focus:** Phase 4 — Streaming + Tool Use Parity
 
 ## Current Position
 

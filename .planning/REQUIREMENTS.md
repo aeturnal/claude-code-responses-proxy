@@ -26,8 +26,8 @@ Table-stakes MVP requirements for compatibility parity.
 
 ### Observability
 
-- [ ] **OBS-01**: Structured logs are emitted for requests/responses with PII redaction by default.
-- [ ] **OBS-02**: Each request/stream includes a correlation ID in logs.
+- [x] **OBS-01**: Structured logs are emitted for requests/responses with PII redaction by default.
+- [x] **OBS-02**: Each request/stream includes a correlation ID in logs.
 
 ## Future Requirements (Deferred)
 
@@ -66,8 +66,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STREAM-03 | Phase 4 | Pending |
 | TOK-01 | Phase 2 | Complete |
 | TOK-02 | Phase 2 | Complete |
-| OBS-01 | Phase 3 | Pending |
-| OBS-02 | Phase 3 | Pending |
+| OBS-01 | Phase 3 | Complete |
+| OBS-02 | Phase 3 | Complete |
 
 **Coverage:**
 - v1 requirements: 10 total
@@ -76,4 +76,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-01-25*
-*Last updated: 2026-01-25 after milestone v1.0 definition*
+*Last updated: 2026-01-26 after Phase 3 completion*
