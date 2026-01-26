@@ -48,12 +48,12 @@ Plans:
 - [x] 02-01-PLAN.md — Implement token counting utilities and /v1/messages/count_tokens endpoint
 
 ### Phase 3: Privacy-First Observability
-**Goal**: Operators can observe requests and streams without exposing PII.
+**Goal**: Operators can observe requests and responses without exposing PII.
 **Depends on**: Phase 1
 **Requirements**: OBS-01, OBS-02
 **Success Criteria** (what must be TRUE):
   1. Operator can see structured logs for requests and responses with PII redacted by default.
-  2. Each request and stream log entry includes a correlation ID that can be used to trace a single interaction.
+  2. Each request/response log entry includes a correlation ID that can be used to trace a single interaction.
 **Plans**: 2 plans
 
 Plans:
