@@ -42,10 +42,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. User can call `/v1/messages/count_tokens` and receive token counts aligned to OpenAI billing behavior.
   2. System and tool content in the request are counted consistently with the mapping used by `/v1/messages`.
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 02-01: TBD
+- [x] 02-01-PLAN.md — Implement token counting utilities and /v1/messages/count_tokens endpoint
 
 ### Phase 3: Privacy-First Observability
 **Goal**: Operators can observe requests and streams without exposing PII.
@@ -80,6 +80,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Messages Parity | 4/4 | Complete | 2026-01-26 |
-| 2. Token Counting Alignment | 0/TBD | Not started | - |
+| 2. Token Counting Alignment | 1/1 | Complete | 2026-01-26 |
 | 3. Privacy-First Observability | 0/TBD | Not started | - |
 | 4. Streaming + Tool Use Parity | 0/TBD | Not started | - |
