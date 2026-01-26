@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, AsyncIterator, Dict, Optional
 
 import structlog
 from asgi_correlation_id import correlation_id
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.errors.anthropic_error import build_anthropic_error, map_openai_error_type
 from src.mapping.anthropic_to_openai import map_anthropic_request_to_openai
+from src.mapping.openai_stream_to_anthropic import translate_openai_events
 from src.mapping.openai_to_anthropic import map_openai_response_to_anthropic
 from src.observability.logging import logging_enabled
 from src.observability.redaction import (
@@ -21,6 +22,7 @@ from src.observability.redaction import (
 )
 from src.schema.anthropic import MessagesRequest
 from src.transport.openai_client import OpenAIUpstreamError, create_openai_response
+from src.transport.openai_stream import stream_openai_events
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -110,3 +112,23 @@ async def create_message(http_request: Request, request: MessagesRequest) -> Any
             payload=redact_anthropic_response(response_payload),
         )
     return response_payload
+
+
+@router.post("/v1/messages/stream")
+async def stream_messages(
+    http_request: Request, request: MessagesRequest
+) -> StreamingResponse:
+    """Stream Anthropic-compatible SSE events mapped from OpenAI Responses."""
+    openai_request = map_anthropic_request_to_openai(request)
+    payload = _normalize_openai_payload(openai_request)
+    payload["stream"] = True
+
+    async def event_stream() -> AsyncIterator[str]:
+        openai_events = stream_openai_events(payload)
+        async for sse_event in translate_openai_events(openai_events):
+            yield sse_event
+
+    headers = {"Cache-Control": "no-cache", "Connection": "keep-alive"}
+    return StreamingResponse(
+        event_stream(), media_type="text/event-stream", headers=headers
+    )
