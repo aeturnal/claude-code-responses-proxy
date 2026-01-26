@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Token Counting Alignment** - `/v1/messages/count_tokens` aligned with OpenAI billing semantics.
 - [x] **Phase 3: Privacy-First Observability** - PII-redacted structured logs with correlation IDs.
 - [x] **Phase 4: Streaming + Tool Use Parity** - `/v1/messages/stream` SSE parity including tool_use and input_json_delta.
-- [ ] **Phase 5: Credential Error Envelope Parity** - Missing OpenAI credential returns Anthropic error envelope for messages + stream.
+- [x] **Phase 5: Credential Error Envelope Parity** - Missing OpenAI credential returns Anthropic error envelope for messages + stream.
 - [ ] **Phase 6: Token Count Billing Alignment Verification** - Verify `/v1/messages/count_tokens` matches OpenAI billing.
 
 ## Phase Details
@@ -89,7 +89,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 05-01-PLAN.md — Add missing-credential error envelope handling + tests
+- [x] 05-01-PLAN.md — Add missing-credential error envelope handling + tests
 
 ### Phase 6: Token Count Billing Alignment Verification
 **Goal**: Verify `/v1/messages/count_tokens` outputs match OpenAI billing semantics for mapped requests.
@@ -116,5 +116,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 2. Token Counting Alignment | 1/1 | Complete | 2026-01-26 |
 | 3. Privacy-First Observability | 2/2 | Complete | 2026-01-26 |
 | 4. Streaming + Tool Use Parity | 3/3 | Complete | 2026-01-26 |
-| 5. Credential Error Envelope Parity | 0/1 | Planned | — |
+| 5. Credential Error Envelope Parity | 1/1 | Complete | 2026-01-26 |
 | 6. Token Count Billing Alignment Verification | 0/1 | Planned | — |
