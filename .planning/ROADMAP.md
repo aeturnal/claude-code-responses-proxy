@@ -16,6 +16,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Token Counting Alignment** - `/v1/messages/count_tokens` aligned with OpenAI billing semantics.
 - [x] **Phase 3: Privacy-First Observability** - PII-redacted structured logs with correlation IDs.
 - [x] **Phase 4: Streaming + Tool Use Parity** - `/v1/messages/stream` SSE parity including tool_use and input_json_delta.
+- [ ] **Phase 5: Credential Error Envelope Parity** - Missing OpenAI credential returns Anthropic error envelope for messages + stream.
+- [ ] **Phase 6: Token Count Billing Alignment Verification** - Verify `/v1/messages/count_tokens` matches OpenAI billing.
 
 ## Phase Details
 
@@ -75,6 +77,34 @@ Plans:
 - [x] 04-02-PLAN.md — Translate OpenAI stream events to Anthropic SSE + tool_use deltas
 - [x] 04-03-PLAN.md — Implement /v1/messages/stream endpoint + logging/error handling
 
+### Phase 5: Credential Error Envelope Parity
+**Goal**: Missing OpenAI credentials return Anthropic error envelopes for both messages and streaming.
+**Depends on**: Phase 1, Phase 4
+**Requirements**: CORE-03 (error envelope parity)
+**Gap Closure**: Closes audit integration gap for missing `OPENAI_API_KEY` error shape.
+**Success Criteria** (what must be TRUE):
+  1. `/v1/messages` with no `OPENAI_API_KEY` returns Anthropic error envelope (not 500).
+  2. `/v1/messages/stream` with no `OPENAI_API_KEY` emits `event: error` with Anthropic error envelope.
+  3. Tests cover missing-credential error mapping for both paths.
+**Plans**: 1 plan
+
+Plans:
+- [ ] 05-01-PLAN.md — Add missing-credential error envelope handling + tests
+
+### Phase 6: Token Count Billing Alignment Verification
+**Goal**: Verify `/v1/messages/count_tokens` outputs match OpenAI billing semantics for mapped requests.
+**Depends on**: Phase 2
+**Requirements**: TOK-01
+**Gap Closure**: Closes audit requirement gap for token-count alignment verification.
+**Success Criteria** (what must be TRUE):
+  1. Verification script or harness compares proxy counts against OpenAI billing counts.
+  2. Verification steps documented with sample inputs/outputs.
+  3. Phase 2 verification updated to reflect completed alignment check.
+**Plans**: 1 plan
+
+Plans:
+- [ ] 06-01-PLAN.md — Add token count alignment verification harness + docs
+
 ## Progress
 
 **Execution Order:**
@@ -86,3 +116,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 2. Token Counting Alignment | 1/1 | Complete | 2026-01-26 |
 | 3. Privacy-First Observability | 2/2 | Complete | 2026-01-26 |
 | 4. Streaming + Tool Use Parity | 3/3 | Complete | 2026-01-26 |
+| 5. Credential Error Envelope Parity | 0/1 | Planned | — |
+| 6. Token Count Billing Alignment Verification | 0/1 | Planned | — |
