@@ -8,29 +8,34 @@ A production-grade compatibility gateway that lets Claude Code (and other Anthro
 
 Claude Code works seamlessly against OpenAI models as if it were talking to Anthropic.
 
-## Current Milestone: v1.0 MVP Compatibility
+## Current State
 
-**Goal:** Ship a minimal, production-grade compatibility layer that supports Claude Code’s core workflows on OpenAI models.
+v1.0 MVP Compatibility shipped on 2026-01-26.
 
-**Target features:**
-- /v1/messages with Anthropic → OpenAI translation and error shape parity
-- /v1/messages/stream with tool_use + input_json_delta streaming parity
-- /v1/messages/count_tokens parity for cost/limit alignment
-- PII-redacted structured logging by default
+- `/v1/messages` parity (mapping, stop_reason, deterministic error envelopes)
+- `/v1/messages/stream` SSE parity with tool_use + input_json_delta
+- `/v1/messages/count_tokens` aligned to OpenAI billing with verification harness
+- Privacy-first observability (PII redaction + correlation IDs)
+
+## Next Milestone Goals
+
+- Define v1.1 scope and requirements
+- Evaluate post-MVP endpoints (/v1/files, /v1/messages/batches)
+- Consider tracing hooks (OpenTelemetry-ready)
 
 ## Requirements
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ /v1/messages provides Anthropic Messages API parity (roles, system, stop_reason) against OpenAI Responses — v1.0
+- ✓ /v1/messages/stream streams Anthropic-compatible SSE events with tool_use + input_json_delta behavior — v1.0
+- ✓ /v1/messages/count_tokens matches OpenAI billing/token accounting as closely as possible — v1.0
+- ✓ Tool schema fidelity and tool_choice semantics preserved end-to-end — v1.0
+- ✓ Structured logs are PII-redacted by default — v1.0
 
 ### Active
 
-- [ ] /v1/messages provides Anthropic Messages API parity (roles, system, stop_reason) against OpenAI Responses.
-- [ ] /v1/messages/stream streams Anthropic-compatible SSE events with tool_use + input_json_delta behavior.
-- [ ] /v1/messages/count_tokens matches OpenAI billing/token accounting as closely as possible.
-- [ ] Tool schema fidelity and tool_choice semantics preserved end-to-end.
-- [ ] Structured logs are PII-redacted by default.
+- [ ] Define next milestone requirements (run /gsd-new-milestone)
 
 ### Out of Scope
 
@@ -42,9 +47,9 @@ Claude Code works seamlessly against OpenAI models as if it were talking to Anth
 ## Context
 
 - Open-source users want Claude Code to run against OpenAI models without breaking Anthropic semantics.
-- MVP scope includes /v1/messages, /v1/messages/stream, /v1/messages/count_tokens.
-- Files API should store metadata and content locally with a configurable storage directory.
-- Token counting should match OpenAI billing as closely as possible.
+- Shipped v1.0 with Python + FastAPI proxy, mapping layers, streaming translator, tiktoken token counting, and privacy-first logging.
+- Verification harness compares proxy token counts to OpenAI Responses billing usage.
+- Files API should store metadata and content locally with a configurable storage directory (post-MVP).
 
 ## Constraints
 
@@ -59,11 +64,11 @@ Claude Code works seamlessly against OpenAI models as if it were talking to Anth
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Anthropic → OpenAI translation only | Keep scope tight and semantics accurate | — Pending |
-| Explicit model mapping with env overrides | Default compatibility with flexible overrides | — Pending |
-| Hybrid error shape | Anthropic envelope with OpenAI details for debuggability | — Pending |
-| Local disk file storage | Simple, deterministic default for CLI | — Pending |
-| MVP excludes size limits/rate limiting | Reduce scope to core parity and streaming | — Pending |
+| Anthropic → OpenAI translation only | Keep scope tight and semantics accurate | ✓ Implemented v1.0 |
+| Explicit model mapping with env overrides | Default compatibility with flexible overrides | ✓ Implemented v1.0 |
+| Hybrid error shape | Anthropic envelope with OpenAI details for debuggability | ✓ Implemented v1.0 |
+| Local disk file storage | Simple, deterministic default for CLI | ⚠ Deferred (post-MVP) |
+| MVP excludes size limits/rate limiting | Reduce scope to core parity and streaming | ✓ Maintained for v1.0 |
 
 ---
-*Last updated: 2026-01-25 after milestone v1.0 kickoff*
+*Last updated: 2026-01-26 after v1.0 milestone completion*

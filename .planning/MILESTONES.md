@@ -1,27 +1,26 @@
-# Milestones
+# Project Milestones: OpenAI Responses Compatibility Proxy
 
-## v1.0 — MVP Compatibility
+## v1.0 MVP Compatibility (Shipped: 2026-01-26)
 
-**Status:** In progress
-**Started:** 2026-01-25
-**Goal:** Ship the minimal compatibility layer that lets Claude Code use OpenAI models with core Anthropic semantics.
+**Delivered:** Production-grade compatibility proxy with messages, streaming, token counting, and privacy-first logging.
 
-**Must ship:**
-- /v1/messages
-- /v1/messages/stream (tool_use + input_json_delta)
-- /v1/messages/count_tokens
-- PII-redacted structured logging
+**Phases completed:** 1–6 (12 plans total)
 
-**Nice to have (defer if needed):**
-- /v1/files
-- /v1/messages/batches
+**Key accomplishments:**
+- Implemented `/v1/messages` parity with deterministic error envelopes and stop_reason handling.
+- Delivered `/v1/messages/stream` SSE parity with tool_use + input_json_delta.
+- Added `/v1/messages/count_tokens` aligned to OpenAI billing with shared normalization.
+- Shipped privacy-first observability with PII redaction and correlation IDs.
+- Built verification harness comparing proxy token counts to OpenAI usage.
 
-**Notes:**
-- No request size limits or rate limiting in MVP scope.
-- Auth remains env var only (`OPENAI_API_KEY`).
+**Stats:**
+- 80 files created/modified
+- 2,366 lines of Python (src/tests/scripts)
+- 6 phases, 12 plans, 25 tasks
+- 1 day from start to ship (2026-01-25 → 2026-01-26)
 
-**Phases:**
-- TBD (roadmap pending)
+**Git range:** `8ca909c` → `5cf28b5`
+
+**What's next:** Define v1.1 milestone requirements
 
 ---
-*Milestones initialized: 2026-01-25*
