@@ -64,8 +64,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STREAM-01 | Phase 4 | Pending |
 | STREAM-02 | Phase 4 | Pending |
 | STREAM-03 | Phase 4 | Pending |
-| TOK-01 | Phase 2 | Pending |
-| TOK-02 | Phase 2 | Pending |
+| TOK-01 | Phase 2 | Complete |
+| TOK-02 | Phase 2 | Complete |
 | OBS-01 | Phase 3 | Pending |
 | OBS-02 | Phase 3 | Pending |
 

@@ -13,7 +13,7 @@ Deliver a production-grade compatibility proxy that preserves Anthropic Messages
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Core Messages Parity** - `/v1/messages` request/response parity with deterministic error shapes.
-- [ ] **Phase 2: Token Counting Alignment** - `/v1/messages/count_tokens` aligned with OpenAI billing semantics.
+- [x] **Phase 2: Token Counting Alignment** - `/v1/messages/count_tokens` aligned with OpenAI billing semantics.
 - [ ] **Phase 3: Privacy-First Observability** - PII-redacted structured logs with correlation IDs.
 - [ ] **Phase 4: Streaming + Tool Use Parity** - `/v1/messages/stream` SSE parity including tool_use and input_json_delta.
 
