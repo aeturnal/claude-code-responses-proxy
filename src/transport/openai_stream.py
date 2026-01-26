@@ -46,7 +46,7 @@ async def stream_openai_events(
     current_event: Optional[str] = None
     data_lines: List[str] = []
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=300.0) as client:
         async with client.stream(
             "POST", url, json=payload, headers=headers
         ) as response:

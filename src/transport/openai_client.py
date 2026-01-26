@@ -35,7 +35,7 @@ async def create_openai_response(payload: Dict[str, Any]) -> Dict[str, Any]:
     if upstream_correlation_id:
         headers["X-Correlation-ID"] = upstream_correlation_id
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=300.0) as client:
         response = await client.post(url, json=payload, headers=headers)
 
     if response.is_error:

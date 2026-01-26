@@ -11,7 +11,7 @@ from asgi_correlation_id import correlation_id
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from src.config import MissingOpenAIAPIKeyError
+from src.config import MissingOpenAIAPIKeyError, resolve_openai_model
 from src.errors.anthropic_error import build_anthropic_error, map_openai_error_type
 from src.mapping.anthropic_to_openai import map_anthropic_request_to_openai
 from src.mapping.openai_stream_to_anthropic import translate_openai_events
@@ -87,6 +87,12 @@ def _format_sse_error(payload: Dict[str, Any]) -> str:
 async def create_message(http_request: Request, request: MessagesRequest) -> Any:
     """Translate Anthropic Messages request into OpenAI Responses output."""
 
+    model_anthropic = request.model
+    model_openai = None
+    try:
+        model_openai = resolve_openai_model(request.model)
+    except ValueError:
+        model_openai = None
     correlation_id_value = _get_correlation_id(http_request)
     if logging_enabled():
         logger.info(
@@ -94,6 +100,8 @@ async def create_message(http_request: Request, request: MessagesRequest) -> Any
             endpoint=str(http_request.url.path),
             method=http_request.method,
             correlation_id=correlation_id_value,
+            model_anthropic=model_anthropic,
+            model_openai=model_openai,
             payload=redact_messages_request(request),
         )
 
@@ -116,6 +124,8 @@ async def create_message(http_request: Request, request: MessagesRequest) -> Any
                 status_code=401,
                 duration_ms=_duration_ms(http_request),
                 correlation_id=correlation_id_value,
+                model_anthropic=model_anthropic,
+                model_openai=model_openai,
                 payload=redact_openai_error(openai_error),
             )
         return JSONResponse(status_code=401, content=error_payload)
@@ -138,6 +148,8 @@ async def create_message(http_request: Request, request: MessagesRequest) -> Any
                 status_code=exc.status_code,
                 duration_ms=_duration_ms(http_request),
                 correlation_id=correlation_id_value,
+                model_anthropic=model_anthropic,
+                model_openai=model_openai,
                 payload=redact_openai_error(exc.error_payload),
             )
         return JSONResponse(status_code=exc.status_code, content=error_payload)
@@ -150,6 +162,8 @@ async def create_message(http_request: Request, request: MessagesRequest) -> Any
             status_code=200,
             duration_ms=_duration_ms(http_request),
             correlation_id=correlation_id_value,
+            model_anthropic=model_anthropic,
+            model_openai=model_openai,
             token_usage=response.get("usage") if isinstance(response, dict) else None,
             payload=redact_anthropic_response(response_payload),
         )
@@ -161,6 +175,12 @@ async def stream_messages(
     http_request: Request, request: MessagesRequest
 ) -> StreamingResponse:
     """Stream Anthropic-compatible SSE events mapped from OpenAI Responses."""
+    model_anthropic = request.model
+    model_openai = None
+    try:
+        model_openai = resolve_openai_model(request.model)
+    except ValueError:
+        model_openai = None
     correlation_id_value = _get_correlation_id(http_request)
     if logging_enabled():
         logger.info(
@@ -168,6 +188,8 @@ async def stream_messages(
             endpoint=str(http_request.url.path),
             method=http_request.method,
             correlation_id=correlation_id_value,
+            model_anthropic=model_anthropic,
+            model_openai=model_openai,
             payload=redact_messages_request(request),
         )
 
@@ -203,6 +225,8 @@ async def stream_messages(
                     status_code=401,
                     duration_ms=_duration_ms(http_request),
                     correlation_id=correlation_id_value,
+                    model_anthropic=model_anthropic,
+                    model_openai=model_openai,
                     payload=redact_openai_error(openai_error),
                 )
             yield _format_sse_error(error_payload)
@@ -226,6 +250,8 @@ async def stream_messages(
                     status_code=exc.status_code,
                     duration_ms=_duration_ms(http_request),
                     correlation_id=correlation_id_value,
+                    model_anthropic=model_anthropic,
+                    model_openai=model_openai,
                     payload=redact_openai_error(exc.error_payload),
                 )
             yield _format_sse_error(error_payload)
@@ -237,6 +263,8 @@ async def stream_messages(
                     status_code=200,
                     duration_ms=_duration_ms(http_request),
                     correlation_id=correlation_id_value,
+                    model_anthropic=model_anthropic,
+                    model_openai=model_openai,
                     token_usage=latest_usage,
                 )
 

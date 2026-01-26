@@ -9,6 +9,7 @@ from asgi_correlation_id import correlation_id
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from src.config import resolve_openai_model
 from src.errors.anthropic_error import build_anthropic_error
 from src.mapping.anthropic_to_openai import map_anthropic_request_to_openai
 from src.observability.logging import logging_enabled
@@ -35,6 +36,12 @@ def _duration_ms(request: Request) -> int | None:
 async def count_tokens(http_request: Request, request: MessagesRequest):
     """Return OpenAI-aligned input token counts for an Anthropic request."""
 
+    model_anthropic = request.model
+    model_openai = None
+    try:
+        model_openai = resolve_openai_model(request.model)
+    except ValueError:
+        model_openai = None
     correlation_id_value = _get_correlation_id(http_request)
     if logging_enabled():
         logger.info(
@@ -42,6 +49,8 @@ async def count_tokens(http_request: Request, request: MessagesRequest):
             endpoint=str(http_request.url.path),
             method=http_request.method,
             correlation_id=correlation_id_value,
+            model_anthropic=model_anthropic,
+            model_openai=model_openai,
             payload=redact_messages_request(request),
         )
 
@@ -61,6 +70,8 @@ async def count_tokens(http_request: Request, request: MessagesRequest):
                 status_code=400,
                 duration_ms=_duration_ms(http_request),
                 correlation_id=correlation_id_value,
+                model_anthropic=model_anthropic,
+                model_openai=model_openai,
                 payload=redact_openai_error(error_payload),
             )
         return JSONResponse(status_code=400, content=error_payload)
@@ -73,6 +84,8 @@ async def count_tokens(http_request: Request, request: MessagesRequest):
             status_code=200,
             duration_ms=_duration_ms(http_request),
             correlation_id=correlation_id_value,
+            model_anthropic=model_anthropic,
+            model_openai=model_openai,
             token_usage={"input_tokens": input_tokens},
             payload={"input_tokens": input_tokens},
         )
