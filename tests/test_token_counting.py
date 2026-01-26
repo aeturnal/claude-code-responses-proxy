@@ -3,7 +3,6 @@ from __future__ import annotations
 import tiktoken
 
 from src.schema.openai import (
-    FunctionDefinition,
     FunctionTool,
     InputMessageItem,
     InputTextItem,
@@ -64,15 +63,13 @@ def test_instructions_increase_count() -> None:
 
 def test_tools_increase_count() -> None:
     tool = FunctionTool(
-        function=FunctionDefinition(
-            name="lookup",
-            description="Lookup data",
-            parameters={
-                "type": "object",
-                "properties": {"id": {"type": "string"}},
-                "required": ["id"],
-            },
-        ),
+        name="lookup",
+        description="Lookup data",
+        parameters={
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+            "required": ["id"],
+        },
         strict=False,
     )
     base_request = OpenAIResponsesRequest(

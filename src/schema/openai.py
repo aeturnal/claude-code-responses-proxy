@@ -22,33 +22,21 @@ class InputMessageItem(BaseModel):
     content: List[InputTextItem]
 
 
-class FunctionDefinition(BaseModel):
-    """OpenAI Responses function definition payload."""
-
-    name: str
-    description: Optional[str] = None
-    parameters: Dict[str, Any] = Field(default_factory=dict)
-
-
 class FunctionTool(BaseModel):
     """OpenAI Responses function tool definition."""
 
     type: Literal["function"] = "function"
-    function: FunctionDefinition
-    strict: bool = False
-
-
-class ToolChoiceFunctionDetail(BaseModel):
-    """Tool choice detail for a specific function."""
-
     name: str
+    description: Optional[str] = None
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    strict: bool = False
 
 
 class ToolChoiceFunction(BaseModel):
     """Tool choice specifying a function."""
 
     type: Literal["function"] = "function"
-    function: ToolChoiceFunctionDetail
+    name: str
 
 
 ToolChoice = Union[Literal["auto", "none"], ToolChoiceFunction]

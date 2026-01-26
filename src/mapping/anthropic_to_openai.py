@@ -15,14 +15,12 @@ from src.schema.anthropic import (
     ToolUseBlock,
 )
 from src.schema.openai import (
-    FunctionDefinition,
     FunctionTool,
     InputMessageItem,
     InputTextItem,
     OpenAIResponsesRequest,
     ToolChoice as OpenAIToolChoice,
     ToolChoiceFunction,
-    ToolChoiceFunctionDetail,
 )
 
 
@@ -100,11 +98,9 @@ def map_anthropic_request_to_openai(request: MessagesRequest) -> OpenAIResponses
     if request.tools:
         tools = [
             FunctionTool(
-                function=FunctionDefinition(
-                    name=tool.name,
-                    description=tool.description,
-                    parameters=tool.parameters,
-                ),
+                name=tool.name,
+                description=tool.description,
+                parameters=tool.parameters,
                 strict=False,
             )
             for tool in request.tools
@@ -115,9 +111,7 @@ def map_anthropic_request_to_openai(request: MessagesRequest) -> OpenAIResponses
         if isinstance(request.tool_choice, str):
             tool_choice = request.tool_choice
         elif isinstance(request.tool_choice, ToolChoiceSpecific):
-            tool_choice = ToolChoiceFunction(
-                function=ToolChoiceFunctionDetail(name=request.tool_choice.name)
-            )
+            tool_choice = ToolChoiceFunction(name=request.tool_choice.name)
 
     payload = OpenAIResponsesRequest(
         model=resolve_openai_model(request.model),
