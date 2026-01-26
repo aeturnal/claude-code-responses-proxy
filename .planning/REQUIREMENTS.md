@@ -58,21 +58,21 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CORE-01 | Phase ? | Pending |
-| CORE-02 | Phase ? | Pending |
-| CORE-03 | Phase ? | Pending |
-| STREAM-01 | Phase ? | Pending |
-| STREAM-02 | Phase ? | Pending |
-| STREAM-03 | Phase ? | Pending |
-| TOK-01 | Phase ? | Pending |
-| TOK-02 | Phase ? | Pending |
-| OBS-01 | Phase ? | Pending |
-| OBS-02 | Phase ? | Pending |
+| CORE-01 | Phase 1 | Pending |
+| CORE-02 | Phase 1 | Pending |
+| CORE-03 | Phase 1 | Pending |
+| STREAM-01 | Phase 4 | Pending |
+| STREAM-02 | Phase 4 | Pending |
+| STREAM-03 | Phase 4 | Pending |
+| TOK-01 | Phase 2 | Pending |
+| TOK-02 | Phase 2 | Pending |
+| OBS-01 | Phase 3 | Pending |
+| OBS-02 | Phase 3 | Pending |
 
 **Coverage:**
 - v1 requirements: 10 total
-- Mapped to phases: 0
-- Unmapped: 10 ⚠️
+- Mapped to phases: 10
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-01-25*

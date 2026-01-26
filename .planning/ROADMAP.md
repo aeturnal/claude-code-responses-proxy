@@ -1,0 +1,82 @@
+# Roadmap: OpenAI Responses Compatibility Proxy
+
+## Overview
+
+Deliver a production-grade compatibility proxy that preserves Anthropic Messages semantics on top of OpenAI Responses. The v1.0 roadmap focuses on core request/response parity, token counting alignment, privacy-first observability, and streaming/tool-use parity so Claude Code can run without semantic breaks.
+
+## Phases
+
+**Phase Numbering:**
+- Integer phases (1, 2, 3): Planned milestone work
+- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+
+Decimal phases appear between their surrounding integers in numeric order.
+
+- [ ] **Phase 1: Core Messages Parity** - `/v1/messages` request/response parity with deterministic error shapes.
+- [ ] **Phase 2: Token Counting Alignment** - `/v1/messages/count_tokens` aligned with OpenAI billing semantics.
+- [ ] **Phase 3: Privacy-First Observability** - PII-redacted structured logs with correlation IDs.
+- [ ] **Phase 4: Streaming + Tool Use Parity** - `/v1/messages/stream` SSE parity including tool_use and input_json_delta.
+
+## Phase Details
+
+### Phase 1: Core Messages Parity
+**Goal**: Users can call `/v1/messages` and receive Anthropic-compatible responses and errors.
+**Depends on**: Nothing (first phase)
+**Requirements**: CORE-01, CORE-02, CORE-03
+**Success Criteria** (what must be TRUE):
+  1. User can send an Anthropic-style `/v1/messages` request and receive a valid Anthropic response shape.
+  2. Response `stop_reason` matches Anthropic semantics for typical completion and stop conditions.
+  3. When upstream errors occur, user receives a deterministic Anthropic-style error envelope with OpenAI details included.
+**Plans**: TBD
+
+Plans:
+- [ ] 01-01: TBD
+
+### Phase 2: Token Counting Alignment
+**Goal**: Users can preflight token usage with Anthropic-compatible counting aligned to OpenAI billing.
+**Depends on**: Phase 1
+**Requirements**: TOK-01, TOK-02
+**Success Criteria** (what must be TRUE):
+  1. User can call `/v1/messages/count_tokens` and receive token counts aligned to OpenAI billing behavior.
+  2. System and tool content in the request are counted consistently with the mapping used by `/v1/messages`.
+**Plans**: TBD
+
+Plans:
+- [ ] 02-01: TBD
+
+### Phase 3: Privacy-First Observability
+**Goal**: Operators can observe requests and streams without exposing PII.
+**Depends on**: Phase 1
+**Requirements**: OBS-01, OBS-02
+**Success Criteria** (what must be TRUE):
+  1. Operator can see structured logs for requests and responses with PII redacted by default.
+  2. Each request and stream log entry includes a correlation ID that can be used to trace a single interaction.
+**Plans**: TBD
+
+Plans:
+- [ ] 03-01: TBD
+
+### Phase 4: Streaming + Tool Use Parity
+**Goal**: Users can stream Anthropic-compatible SSE events with tool_use and input_json_delta parity.
+**Depends on**: Phase 1, Phase 3
+**Requirements**: STREAM-01, STREAM-02, STREAM-03
+**Success Criteria** (what must be TRUE):
+  1. User can open `/v1/messages/stream` and receive Anthropic-compatible message/content block lifecycle events in order.
+  2. Tool use blocks stream in Anthropic format and complete tool blocks are emitted at block stop.
+  3. `input_json_delta` events are accumulated during streaming and appear as finalized input JSON in tool blocks.
+**Plans**: TBD
+
+Plans:
+- [ ] 04-01: TBD
+
+## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 1 → 2 → 3 → 4
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 1. Core Messages Parity | 0/TBD | Not started | - |
+| 2. Token Counting Alignment | 0/TBD | Not started | - |
+| 3. Privacy-First Observability | 0/TBD | Not started | - |
+| 4. Streaming + Tool Use Parity | 0/TBD | Not started | - |
