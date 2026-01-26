@@ -4,3 +4,7 @@ httpx
 pydantic
 pytest
 tiktoken
+structlog
+asgi-correlation-id
+presidio-analyzer
+presidio-anonymizer

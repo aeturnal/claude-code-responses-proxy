@@ -12,6 +12,19 @@ OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstr
 OPENAI_DEFAULT_MODEL = os.getenv("OPENAI_DEFAULT_MODEL", "gpt-4.1")
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+OBS_LOG_ENABLED = _env_bool("OBS_LOG_ENABLED", False)
+OBS_LOG_FILE = os.getenv("OBS_LOG_FILE", "./logs/requests.log")
+OBS_REDACTION_MODE = os.getenv("OBS_REDACTION_MODE", "full")
+OBS_LOG_PRETTY = _env_bool("OBS_LOG_PRETTY", True)
+
+
 def require_openai_api_key() -> str:
     """Return the API key or raise if missing."""
     if not OPENAI_API_KEY:
