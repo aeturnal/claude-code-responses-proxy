@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Core Messages Parity** - `/v1/messages` request/response parity with deterministic error shapes.
 - [x] **Phase 2: Token Counting Alignment** - `/v1/messages/count_tokens` aligned with OpenAI billing semantics.
 - [x] **Phase 3: Privacy-First Observability** - PII-redacted structured logs with correlation IDs.
-- [ ] **Phase 4: Streaming + Tool Use Parity** - `/v1/messages/stream` SSE parity including tool_use and input_json_delta.
+- [x] **Phase 4: Streaming + Tool Use Parity** - `/v1/messages/stream` SSE parity including tool_use and input_json_delta.
 
 ## Phase Details
 
@@ -73,7 +73,7 @@ Plans:
 Plans:
 - [x] 04-01-PLAN.md — Add OpenAI streaming transport + SSE parsing
 - [x] 04-02-PLAN.md — Translate OpenAI stream events to Anthropic SSE + tool_use deltas
-- [ ] 04-03-PLAN.md — Implement /v1/messages/stream endpoint + logging/error handling
+- [x] 04-03-PLAN.md — Implement /v1/messages/stream endpoint + logging/error handling
 
 ## Progress
 
@@ -85,4 +85,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. Core Messages Parity | 4/4 | Complete | 2026-01-26 |
 | 2. Token Counting Alignment | 1/1 | Complete | 2026-01-26 |
 | 3. Privacy-First Observability | 2/2 | Complete | 2026-01-26 |
-| 4. Streaming + Tool Use Parity | 2/3 | In progress | 2026-01-26 |
+| 4. Streaming + Tool Use Parity | 3/3 | Complete | 2026-01-26 |
