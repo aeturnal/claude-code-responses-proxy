@@ -1,176 +1,155 @@
 # Pitfalls Research
 
-**Domain:** API compatibility gateway (Anthropic Messages → OpenAI Responses)
+**Domain:** LLM API compatibility gateway (OpenAI Responses → Anthropic Messages parity)
 **Researched:** 2026-01-25
 **Confidence:** MEDIUM
 
 ## Critical Pitfalls
 
-### Pitfall 1: Semantic drift in message/content mapping
+### Pitfall 1: Streaming event translation doesn’t reconstruct Anthropic’s event flow
 
 **What goes wrong:**
-System/assistant/user roles, content blocks, and tool-use blocks are mapped loosely, causing subtle behavior changes (e.g., system instructions applied incorrectly, tool calls misframed, or assistant continuity broken).
+Clients hang or mis-render because the gateway forwards OpenAI streaming events without reconstituting Anthropic’s required sequence (`message_start` → content blocks → `message_delta` → `message_stop`).
 
 **Why it happens:**
-Anthropic Messages and OpenAI Responses model inputs/outputs differently (role handling, content block schemas, tool-use shape). A naïve “field rename” approach ignores semantic differences.
+OpenAI Responses emits different event types (`response.*`, `response.output_text.delta`, `response.function_call_arguments.delta`) and doesn’t map 1:1 to Anthropic’s `content_block_*` model.
 
 **How to avoid:**
-Define a canonical internal schema and write explicit, versioned adapters for both sides. Include contract tests for role ordering, system prompts, tool_use/tool_result blocks, and partial assistant continuations. Document any intentional behavior deltas.
+Build a streaming translator that assembles OpenAI events into Anthropic message/content blocks with explicit start/stop events and correct indices. Add replay-based fixtures to validate full event ordering.
 
 **Warning signs:**
-- Test prompts behave differently between direct Anthropic and gateway usage.
-- Tool calls appear in unexpected places or with malformed inputs.
-- System prompt changes are ignored or bleed into user content.
-
-**Phase to address:**
-Phase 1 — Core request/response mapping & contract tests.
-
----
-
-### Pitfall 2: Streaming event mismatch (SSE parity failure)
-
-**What goes wrong:**
-Streaming clients hang, mis-order content, or miss message termination because Anthropic’s SSE event flow (message_start/content_block_delta/message_stop) doesn’t align with OpenAI Responses streaming events and completion signals.
-
-**Why it happens:**
-Each API has distinct streaming event types and sequencing. Gateways often forward upstream events “as-is” without reconstituting the expected downstream flow.
-
-**How to avoid:**
-Implement a streaming event translator that reconstructs Anthropic’s event model from OpenAI Responses deltas. Include backpressure handling and explicit end-of-stream events. Maintain a compatibility test suite that replays recorded upstream streams.
-
-**Warning signs:**
-- Clients time out waiting for `message_stop`/final event.
-- Partial text duplicated or out-of-order.
-- Tool-use blocks never close.
+- Streaming works for simple text but fails with tool-use.
+- Clients wait forever for `message_stop`.
+- Content blocks appear out of order or never close.
 
 **Phase to address:**
 Phase 2 — Streaming parity & SSE translator.
 
 ---
 
-### Pitfall 3: Token/limit semantics mismatch
+### Pitfall 2: `input_json_delta` handling emits invalid tool inputs
 
 **What goes wrong:**
-Requests that should succeed fail, or truncation happens unexpectedly because `max_tokens`, context limits, and truncation behaviors differ between providers.
+Partial tool arguments are emitted as completed JSON, causing parse errors or missing fields downstream.
 
 **Why it happens:**
-Both APIs expose “max tokens” but apply limits differently and expose different error/usage fields. Gateways often map parameters directly without enforcing provider-specific constraints or returning consistent usage counts.
+Anthropic’s `input_json_delta` is a partial JSON string stream that must be accumulated and parsed once the `content_block_stop` arrives.
 
 **How to avoid:**
-Normalize limits in the gateway: preflight check input sizes, set conservative `max_output_tokens`, and return clear “incomplete” statuses when output is cut off. Keep a per-model policy map with limits and behavior flags.
+Buffer tool argument deltas per content block, validate JSON only at `content_block_stop`, and emit tool-use blocks only once complete. Include test fixtures with partial JSON deltas.
 
 **Warning signs:**
-- Frequent 400/413 errors despite seemingly valid requests.
-- Usage counters missing or inconsistent across endpoints.
-- Responses ending mid-thought without clear stop reasons.
+- Tool calls fail only in streaming mode.
+- Tool inputs are sometimes `{}` or missing required keys.
+- Logs show JSON parse errors during streaming.
 
 **Phase to address:**
-Phase 2 — Token counting + truncation behavior.
+Phase 2 — Tool-use streaming parity.
 
 ---
 
-### Pitfall 4: Error-shape drift and loss of actionable context
+### Pitfall 3: Tool call correlation is broken (IDs and indices drift)
 
 **What goes wrong:**
-Downstream clients get errors that don’t match Anthropic’s schema (or are missing fields like request IDs, error types, or retry-ability), breaking client error handling or retries.
+Tool results attach to the wrong tool call or are dropped because tool IDs/indices don’t align between providers.
 
 **Why it happens:**
-OpenAI and Anthropic error shapes differ and streaming errors can appear mid-stream. Gateway teams often forward errors verbatim or over-normalize, losing needed detail.
+OpenAI Responses uses output item IDs and per-event indices, while Anthropic uses `tool_use` blocks with `id` and content indices. Naïve mapping loses stable identifiers.
 
 **How to avoid:**
-Define a strict error mapping matrix (HTTP status, error.type, error.message, request_id) and include original provider error as a nested field for debugging. Ensure streaming errors generate a final SSE error event plus a structured end state.
+Create a deterministic ID mapping layer and keep a per-response registry of tool calls with indices and output item IDs. Validate that every tool_use has a matching tool_result.
 
 **Warning signs:**
-- Client SDKs raise generic exceptions instead of expected error types.
-- Debug logs require upstream inspection to understand failures.
-- Retrying behavior is inconsistent or overly aggressive.
+- Tool results appear under the wrong request.
+- Some tool calls never receive results.
+- Integration tests with multiple tool calls fail intermittently.
 
 **Phase to address:**
-Phase 1–2 — Error normalization + streaming errors.
+Phase 2 — Tool-use parity + result mapping.
 
 ---
 
-### Pitfall 5: Tool-use delta handling breaks or leaks
+### Pitfall 4: Stream termination semantics are incorrect
 
 **What goes wrong:**
-Tool inputs are malformed or incomplete because partial JSON deltas are forwarded as full JSON, or partial tool-use blocks are exposed to clients that expect completed objects.
+Clients treat responses as incomplete because the gateway doesn’t emit `message_stop`, or emits it before all content blocks are closed.
 
 **Why it happens:**
-Anthropic streams tool inputs as partial JSON deltas and requires accumulation; OpenAI Responses uses different function-call delta formats. Gateways that don’t buffer correctly emit invalid tool inputs.
+OpenAI has `response.completed`/`response.incomplete` events; Anthropic requires an explicit `message_stop` after all blocks and deltas.
 
 **How to avoid:**
-Implement tool-use buffering/assembly: accumulate partial JSON, validate, and emit only when complete. Provide a strict mode that disallows streaming tool blocks to clients that can’t handle them.
+Track completion state and ensure `message_stop` is emitted only after all content blocks have `content_block_stop`. Map incomplete/failed states to Anthropic error or stop semantics.
 
 **Warning signs:**
-- Tool-use JSON parse errors downstream.
-- Tool inputs missing required keys.
-- Sporadic failures only in streaming mode.
+- Client SDKs never resolve stream completion.
+- Downstream waits on stop reason that never arrives.
+- Partial content is discarded due to premature stop.
+
+**Phase to address:**
+Phase 2 — Streaming completion correctness.
+
+---
+
+### Pitfall 5: Logging redaction is applied too late or only on happy paths
+
+**What goes wrong:**
+PII or API keys leak into logs/traces because redaction happens after logs are emitted or doesn’t cover error paths and streaming chunks.
+
+**Why it happens:**
+Logging is added for debugging, then redaction is bolted on in one middleware path. Streaming paths and error handlers often bypass it.
+
+**How to avoid:**
+Centralize log emission through a redaction layer with allowlists, apply to request/response bodies and headers, and ensure streaming chunks and error payloads are filtered. Add unit tests to assert redaction across all endpoints and stream paths.
+
+**Warning signs:**
+- Access logs contain raw prompts or tool inputs.
+- Error logs include request bodies.
+- Redaction coverage differs between streaming and non-streaming.
+
+**Phase to address:**
+Phase 1 — Logging/redaction baseline; Phase 2 — streaming paths.
+
+---
+
+### Pitfall 6: Proxy buffering breaks SSE streaming
+
+**What goes wrong:**
+Events arrive in large bursts or time out because a reverse proxy buffers the stream.
+
+**Why it happens:**
+Default proxy settings (e.g., Nginx, load balancers) buffer responses and don’t flush SSE events promptly.
+
+**How to avoid:**
+Disable proxy buffering for streaming routes, set correct `Content-Type: text/event-stream`, and flush after each event. Add an integration test through the deployed proxy.
+
+**Warning signs:**
+- Streaming works locally but not in staging/prod.
+- Clients receive chunks every few seconds instead of continuous stream.
+- SSE pings are not visible to clients.
+
+**Phase to address:**
+Phase 2 — Deployment/infra streaming validation.
+
+---
+
+### Pitfall 7: Tool-use parity stops at “non-streaming only”
+
+**What goes wrong:**
+MVP supports tool calls in non-streaming mode but streaming tool-use is missing, breaking clients that expect `input_json_delta` and streaming tool events.
+
+**Why it happens:**
+Streaming tool-use is complex and often deferred, but the project requirement explicitly requires input_json_delta parity.
+
+**How to avoid:**
+Treat streaming tool-use as MVP-critical: build it alongside text streaming and include dedicated fixtures that simulate partial tool input.
+
+**Warning signs:**
+- Integration tests pass for tool-use only when `stream=false`.
+- Clients report tool calls only visible at the end.
+- `content_block_delta` for tool use never appears.
 
 **Phase to address:**
 Phase 2 — Streaming tool-use parity.
-
----
-
-### Pitfall 6: File handling semantics diverge from expectations
-
-**What goes wrong:**
-Files appear uploaded but cannot be retrieved or are stored with incorrect metadata/encoding. File IDs are not stable across restarts.
-
-**Why it happens:**
-OpenAI Files API and Anthropic Messages file/document blocks differ in storage semantics and ID lifetimes. Local disk storage can break expectations around persistence, listability, and content types.
-
-**How to avoid:**
-Define a stable file ID scheme, keep metadata (content type, size, checksum), and document retention. Validate file types and sizes on upload, and map to Anthropic document/content block conventions consistently.
-
-**Warning signs:**
-- Uploaded file IDs stop working after restart.
-- Content type mismatches in downstream requests.
-- File list or retrieval returns inconsistent results.
-
-**Phase to address:**
-Phase 3 — Files subsystem & storage semantics.
-
----
-
-### Pitfall 7: PII leakage through logs/metrics/tracing
-
-**What goes wrong:**
-Prompts, completions, or API keys leak into logs or tracing payloads, violating privacy or compliance expectations.
-
-**Why it happens:**
-Observability is often added late. Teams log full payloads for debugging and forget to redact across all layers (app logs, access logs, tracing spans).
-
-**How to avoid:**
-Implement centralized redaction middleware (headers + body), default to structured logs with allowlists, and provide opt-in debug mode with explicit warnings. Test redaction on streaming payloads and error cases.
-
-**Warning signs:**
-- Log lines include raw prompts, tool inputs, or API keys.
-- Traces store request/response bodies.
-- Redaction only applied to one logging path.
-
-**Phase to address:**
-Phase 1–2 — Observability baseline with redaction.
-
----
-
-### Pitfall 8: Retries and idempotency gaps
-
-**What goes wrong:**
-Client retries cause duplicated responses or tool side effects, especially when the gateway retries upstream requests after timeouts.
-
-**Why it happens:**
-Providers differ in idempotency support and background processing semantics. Gateways often retry on network errors without preserving idempotency keys.
-
-**How to avoid:**
-Support idempotency keys for write-like requests and propagate them upstream when possible. Add a response cache for in-flight requests and configurable retry policies.
-
-**Warning signs:**
-- Duplicate responses for the same client request.
-- Upstream rate limit spikes during network instability.
-- Users report repeated tool executions.
-
-**Phase to address:**
-Phase 3 — Reliability & retry policies.
 
 ---
 
@@ -180,11 +159,10 @@ Shortcuts that seem reasonable but create long-term problems.
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| “Just pass through” mapping of fields | Faster MVP | Hidden semantic drift; brittle clients | Never for core endpoints |
-| Skip contract tests across providers | Shorter dev cycle | Regressions on provider changes | Only in prototype spikes |
-| Treat streaming as “just chunked text” | Simpler SSE handling | Breaks tool-use/structured blocks | Never for production |
-| Store files without metadata | Quick local disk support | Retrieval/validation issues | MVP only, with migration plan |
-| Log full payloads for debugging | Easier troubleshooting | PII leakage risk | Never outside dev-only sandbox |
+| Forward OpenAI SSE events “as-is” | Faster implementation | Breaks Anthropic client expectations | Never |
+| Disable streaming for tool calls | Simplifies MVP | Violates required parity | Never |
+| Log raw payloads during debugging | Easy troubleshooting | PII leakage risk | Dev-only, isolated sandbox |
+| Skip SSE replay tests | Faster CI | Regressions go unnoticed | MVP-only, if manual validation exists |
 
 ## Integration Gotchas
 
@@ -192,10 +170,10 @@ Common mistakes when connecting to external services.
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| Anthropic Messages ↔ OpenAI Responses | Assuming role/system semantics are identical | Explicit mapping with tests for system, tool_use, and continuations |
-| Streaming SSE | Forwarding upstream event types directly | Translate event flow to Anthropic-compatible `message_*` + block deltas |
-| Token counting endpoints | Returning upstream counts verbatim | Normalize usage fields and document differences |
-| Files API | Reusing upstream IDs without persistence | Stable IDs + metadata store + retrieval parity |
+| Anthropic streaming | Ignoring required `message_*` event flow | Reconstruct full `message_start` → `message_stop` sequence |
+| OpenAI Responses streaming | Assuming content deltas are only text | Handle function/tool argument deltas and output item events |
+| Reverse proxy (Nginx/ALB) | Buffering SSE responses | Disable buffering, flush events, verify headers |
+| Client SDKs | Not supporting unknown event types | Pass through or safely ignore unknown events |
 
 ## Performance Traps
 
@@ -203,10 +181,9 @@ Patterns that work at small scale but fail as usage grows.
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Per-chunk JSON parsing on every SSE event | High CPU, latency spikes | Buffer + incremental parsing | ~100+ concurrent streams |
-| Synchronous redaction in hot path | Slow responses | Async/stream-aware redaction, allowlists | Moderate QPS with large payloads |
-| No upstream connection pooling | Latency and rate-limit spikes | Use shared HTTP client + keep-alive | Low–mid QPS |
-| Storing full prompts/responses in logs | Disk growth + slow IO | Sampled logs, truncation, redaction | Immediate at scale |
+| Per-chunk JSON parsing for tool deltas | High CPU usage | Buffer deltas and parse once at block end | ~50–100 concurrent streams |
+| Redacting by deep-copying large payloads | Latency spikes | Use streaming-safe redaction + allowlists | Moderate QPS with large prompts |
+| No backpressure handling on SSE | Memory growth | Drop or throttle slow clients | Long-running streams |
 
 ## Security Mistakes
 
@@ -214,10 +191,9 @@ Domain-specific security issues beyond general web security.
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Logging raw prompts or API keys | PII/key leakage | Structured logging + redaction middleware |
-| Accepting unbounded file uploads | Disk exhaustion / DoS | File size limits + quotas |
-| Trusting URL-based content inputs | SSRF / data exfiltration | Block private IP ranges, allowlist domains |
-| Passing client-provided headers upstream | Credential leakage | Strict header allowlist |
+| Logging raw prompts or tool inputs | PII leakage | Central redaction + allowlist logging |
+| Passing client headers upstream | Credential leakage | Strict header allowlist |
+| Storing tool inputs unredacted in traces | Sensitive data exposure | Redact at tracing layer |
 
 ## UX Pitfalls
 
@@ -225,19 +201,19 @@ Common user experience mistakes in this domain.
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| Silent feature drops (e.g., tool_use ignored) | Confusing model behavior | Return explicit errors or warnings |
-| Inconsistent error codes across endpoints | Client retry logic fails | Centralized error mapping policy |
-| Missing required Anthropic headers/version behavior | Client SDKs break | Enforce/validate headers and document defaults |
+| Silent tool-use drops | Clients see incorrect behavior | Emit explicit error explaining unsupported feature |
+| Inconsistent stop reasons | Client logic breaks | Normalize stop_reason fields and document behavior |
+| Missing `message_stop` | Clients hang waiting | Always emit stop event even on error (with error payload) |
 
 ## "Looks Done But Isn't" Checklist
 
 Things that appear complete but are missing critical pieces.
 
-- [ ] **Streaming support:** Text works, but tool_use and message_stop semantics verified
-- [ ] **Token counting:** Counts align with reported usage and truncation behavior
-- [ ] **Files:** Upload, list, retrieve, and attach flows verified end-to-end
-- [ ] **Errors:** Gateway returns Anthropic-shaped errors with request IDs
-- [ ] **Observability:** Logs/metrics/traces redacted across success + error paths
+- [ ] **Streaming parity:** `message_start`, `content_block_*`, `message_stop` sequence verified
+- [ ] **Tool-use streaming:** `input_json_delta` accumulation validated with partial JSON fixtures
+- [ ] **Error streaming:** error events mapped and still terminate with stop
+- [ ] **Redaction:** verified on streaming chunks + error logs + access logs
+- [ ] **Proxy config:** SSE not buffered in production
 
 ## Recovery Strategies
 
@@ -245,10 +221,9 @@ When pitfalls occur despite prevention, how to recover.
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Semantic mapping drift | MEDIUM | Add contract tests, pin behavior, document deltas, re-run compatibility suite |
-| Streaming mismatch | HIGH | Rebuild event translator, add replay-based tests, roll out behind feature flag |
-| File ID instability | MEDIUM | Add migration layer, re-key files, publish deprecation plan |
-| PII leakage | HIGH | Rotate keys, purge logs, add redaction + audit |
+| Event translation mismatch | HIGH | Roll out a fixed translator behind feature flag; replay captured streams in CI |
+| Tool delta parsing errors | MEDIUM | Add buffering + JSON validation, re-run integration tests |
+| PII leakage in logs | HIGH | Rotate keys, purge logs, patch redaction; audit logging paths |
 
 ## Pitfall-to-Phase Mapping
 
@@ -256,23 +231,19 @@ How roadmap phases should address these pitfalls.
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| Semantic drift in mapping | Phase 1 | Contract tests comparing direct Anthropic vs gateway output |
-| Streaming event mismatch | Phase 2 | Replay SSE fixtures; ensure message_stop appears and blocks close |
-| Token/limit mismatch | Phase 2 | Golden tests for count_tokens + truncation outcomes |
-| Error-shape drift | Phase 1–2 | Snapshot tests for error schema across endpoints |
-| Tool-use delta handling | Phase 2 | Tool-use streaming fixtures with partial JSON deltas |
-| File handling divergence | Phase 3 | Persisted file retrieval after restart; checksum checks |
-| PII leakage | Phase 1–2 | Redaction audit on logs/traces |
-| Retry/idempotency gaps | Phase 3 | Idempotency key tests with forced retry scenarios |
+| Streaming event translation mismatch | Phase 2 | SSE replay fixtures validate full event ordering |
+| `input_json_delta` handling | Phase 2 | Fixture with partial JSON deltas parses correctly |
+| Tool correlation drift | Phase 2 | Multi-tool integration tests verify tool_use_id mapping |
+| Incorrect stream termination | Phase 2 | Ensure `message_stop` always emitted after final block |
+| Logging redaction gaps | Phase 1–2 | Redaction tests across success + error + streaming |
+| Proxy buffering | Phase 2 | Staging test via real proxy shows incremental events |
 
 ## Sources
 
-- OpenAI Responses API Reference (streaming + response object): https://platform.openai.com/docs/api-reference/responses
 - OpenAI Responses Streaming Events: https://platform.openai.com/docs/api-reference/responses-streaming
-- Anthropic Messages API Reference: https://docs.anthropic.com/en/api/messages
 - Anthropic Messages Streaming: https://docs.anthropic.com/en/api/messages-streaming
-- Inference from project context + common gateway failure modes (LOW confidence; needs validation)
+- Anthropic tool-use streaming (`input_json_delta`): https://docs.anthropic.com/en/api/messages-streaming
 
 ---
-*Pitfalls research for: API compatibility gateway (Anthropic Messages → OpenAI Responses)*
+*Pitfalls research for: LLM API compatibility gateway (OpenAI Responses → Anthropic Messages parity)*
 *Researched: 2026-01-25*

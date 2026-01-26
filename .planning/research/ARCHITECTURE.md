@@ -1,6 +1,6 @@
 # Architecture Research
 
-**Domain:** API compatibility gateway / proxy (provider-to-provider semantic adapter)
+**Domain:** API compatibility proxy (Claude Messages → OpenAI Responses)
 **Researched:** 2026-01-25
 **Confidence:** MEDIUM
 
@@ -10,33 +10,40 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         Edge / Ingress Layer                        │
+│                         Ingress / API Layer                         │
 ├─────────────────────────────────────────────────────────────────────┤
-│  ┌────────────┐  ┌──────────────┐  ┌──────────────┐  ┌────────────┐ │
-│  │ HTTP/S     │  │ Auth & Keys  │  │ Rate/Size    │  │ Request    │ │
-│  │ Listener   │→ │ (API key)    │→ │ Limits       │→ │ Validation │ │
-│  └────────────┘  └──────────────┘  └──────────────┘  └────────────┘ │
-│                                (ASGI middleware chain)              │
+│  ┌───────────────┐  ┌──────────────┐  ┌───────────────┐             │
+│  │ HTTP Router   │→ │ Auth & Keys  │→ │ Schema/Size   │             │
+│  │ (/v1/*)       │  │ Validation   │  │ Validation    │             │
+│  └───────────────┘  └──────────────┘  └───────────────┘             │
+│             │                         │                              │
+├─────────────┴─────────────────────────┴──────────────────────────────┤
+│                  Compatibility / Translation Core                    │
 ├─────────────────────────────────────────────────────────────────────┤
-│                     Compatibility / Translation Layer               │
+│  ┌──────────────────┐  ┌────────────────────┐  ┌──────────────────┐ │
+│  │ Canonical Model  │→ │ Request Mapper     │→ │ Tool Mapper      │ │
+│  │ (neutral schema) │  │ (Claude→Responses) │  │ (tool use parity)│ │
+│  └──────────────────┘  └────────────────────┘  └──────────────────┘ │
+│               │                          │                           │
+│               ↓                          ↓                           │
+│  ┌──────────────────┐  ┌────────────────────┐  ┌──────────────────┐ │
+│  │ Stream Adapter   │← │ Response Mapper    │← │ Error Mapper     │ │
+│  │ (SSE transform)  │  │ (Responses→Claude) │  │ (status+shape)   │ │
+│  └──────────────────┘  └────────────────────┘  └──────────────────┘ │
 ├─────────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────────┐  ┌───────────────────────┐  │
-│  │ Canonical    │→ │ Request Mapper   │→ │ Upstream Connector    │  │
-│  │ Model        │  │ (Anthropic→OA)   │  │ (HTTP client)         │  │
-│  └──────────────┘  └──────────────────┘  └───────────────────────┘  │
-│                                  │                                  │
-│                                  ↓                                  │
-│  ┌──────────────┐  ┌──────────────────┐  ┌───────────────────────┐  │
-│  │ Error Mapper │← │ Response Mapper  │← │ Stream Adapter (SSE)  │  │
-│  └──────────────┘  └──────────────────┘  └───────────────────────┘  │
+│                         Upstream Connector                           │
 ├─────────────────────────────────────────────────────────────────────┤
-│                          Support Services Layer                     │
+│  ┌──────────────────┐  ┌────────────────────┐                        │
+│  │ OpenAI Client    │  │ Token Count Client │                        │
+│  │ (/v1/responses)  │  │ (/responses/input) │                        │
+│  └──────────────────┘  └────────────────────┘                        │
 ├─────────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌───────────────┐  ┌─────────────────────────┐  │
-│  │ Observability│  │ File Storage  │  │ Background Jobs         │  │
-│  │ (logs/metrics│  │ (local disk)  │  │ (batches, cleanup)       │  │
-│  │ /tracing)    │  └───────────────┘  └─────────────────────────┘  │
-│  └──────────────┘                                                   │
+│                       Observability & Logging                         │
+├─────────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────┐  ┌────────────────────┐                        │
+│  │ PII Redaction    │→ │ Structured Logger  │                        │
+│  │ (default on)     │  │ + Metrics/Tracing  │                        │
+│  └──────────────────┘  └────────────────────┘                        │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -44,147 +51,164 @@
 
 | Component | Responsibility | Typical Implementation |
 |-----------|----------------|------------------------|
-| HTTP Listener | Accepts requests, handles routing for `/v1/*` endpoints | FastAPI/ASGI app + APIRouter |
-| Auth & Key Validation | Verifies API key in headers/env, rejects unauthorized | ASGI middleware + dependency injection |
-| Rate/Size Limits | Protects upstream and local resources | ASGI middleware + in-memory counters; optional gateway proxy | 
-| Request Validation | Validates input schema, headers, and content type | Pydantic models + request validators |
-| Canonical Model | Internal neutral representation of request/response | Pydantic models / dataclasses |
-| Request Mapper | Translates Anthropic Messages → OpenAI Responses | Adapter layer; explicit field mapping |
-| Upstream Connector | Handles HTTP client, retries, timeouts | httpx/async client with circuit-breaker policies |
-| Stream Adapter | Bridges upstream streaming to SSE/streamed responses | Async generator + incremental transform |
-| Response Mapper | Converts upstream response back to Anthropic shape | Adapter layer + output schema validation |
-| Error Mapper | Normalizes error payloads and status codes | Error taxonomy + response factory |
-| File Storage | Stores uploaded files locally; lifecycle mgmt | Local disk + metadata index |
-| Observability | Logs, metrics, tracing, redaction | OpenTelemetry + structured logging |
-| Background Jobs | Batches, retries, cleanup of temp files | Background tasks / worker process |
+| HTTP Router | Route `/v1/messages`, `/stream`, `/count_tokens` | ASGI/HTTP router + handler functions |
+| Auth & Key Validation | Enforce API key headers, map to upstream keys | Middleware + config-driven key store |
+| Schema/Size Validation | Validate request JSON shape and size | Typed models + request guards |
+| Canonical Model | Internal neutral request/response representation | Dataclasses/Pydantic models |
+| Request Mapper | Convert Claude Messages request → OpenAI Responses | Pure mapping functions + tests |
+| Tool Mapper | Ensure tool schema parity, map tool uses/results | Adapter functions + JSON schema checks |
+| Stream Adapter | Transform streaming events (incl. input_json_delta) | Event transducer + incremental parser |
+| Response Mapper | Convert OpenAI Responses → Claude Messages response | Pure mapping + output validation |
+| Error Mapper | Normalize upstream errors into Claude-compatible errors | Error taxonomy + response factory |
+| OpenAI Client | Calls `/v1/responses` (stream + non-stream) | HTTP client w/ timeouts |
+| Token Count Client | Calls `/v1/responses/input_tokens` for `/count_tokens` | Separate HTTP call, same auth |
+| PII Redaction | Scrub logs by default | Redaction pipeline w/ allowlist |
+| Structured Logger | Emit structured logs + metrics/traces | JSON logger + OTLP exporter |
 
 ## Recommended Project Structure
 
 ```
 src/
-├── api/                     # FastAPI routers/endpoints
-│   ├── messages.py          # /v1/messages, /stream
-│   ├── batches.py           # /v1/messages/batches
-│   ├── files.py             # /v1/files
-│   └── tokens.py            # /v1/messages/count_tokens
-├── middleware/              # auth, size limits, logging
+├── api/                       # HTTP handlers
+│   ├── messages.py            # /v1/messages
+│   ├── messages_stream.py     # /v1/messages/stream
+│   └── count_tokens.py        # /v1/messages/count_tokens
+├── middleware/                # cross-cutting concerns
 │   ├── auth.py
-│   ├── limits.py
+│   ├── validation.py
 │   ├── request_id.py
 │   └── redaction.py
-├── adapters/                # provider compatibility layer
-│   ├── canonical.py         # internal neutral schema
-│   ├── anthropic.py         # Anthropic schema helpers
-│   ├── openai.py            # OpenAI Responses schema helpers
-│   └── mapping.py           # mapping rules and transformers
-├── upstream/                # HTTP client and retry policy
-│   ├── client.py
-│   ├── streaming.py
+├── adapters/                  # compatibility layer
+│   ├── canonical.py           # internal neutral schema
+│   ├── claude.py              # Claude Messages helpers
+│   ├── responses.py           # OpenAI Responses helpers
+│   ├── mapping.py             # request/response mapping
+│   └── tool_mapping.py        # tool use parity
+├── streaming/                 # SSE/event translation
+│   ├── parser.py              # upstream SSE parser
+│   ├── transducer.py          # event mapping (incl input_json_delta)
+│   └── accumulators.py        # partial JSON accumulation
+├── upstream/                  # OpenAI HTTP clients
+│   ├── responses_client.py
+│   ├── input_tokens_client.py
 │   └── errors.py
-├── storage/                 # file storage and metadata
-│   ├── filesystem.py
-│   └── metadata.py
-├── observability/           # logging/metrics/tracing
+├── observability/             # logging/metrics/tracing
 │   ├── logging.py
-│   ├── metrics.py
-│   └── tracing.py
-├── config/                  # settings and env parsing
+│   ├── redaction.py
+│   └── metrics.py
+├── config/                    # env and settings
 │   └── settings.py
-└── main.py                  # app assembly
+└── main.py                    # app assembly
 ```
 
 ### Structure Rationale
 
-- **api/** keeps endpoint definitions thin and declarative.
-- **adapters/** isolates compatibility logic so upstream changes don’t bleed into API handlers.
-- **upstream/** centralizes HTTP client behavior (timeouts, retries, streaming).
-- **middleware/** enforces cross-cutting concerns early (auth, limits, redaction).
-- **observability/** keeps logging and metrics consistent across all paths.
+- **adapters/** isolates compatibility logic, enabling high-test coverage without HTTP concerns.
+- **streaming/** isolates SSE/event handling and partial JSON accumulation for input_json_delta.
+- **observability/** keeps logging consistent and ensures redaction is always enforced.
+- **upstream/** keeps OpenAI-specific HTTP details contained (timeouts, headers, retry rules).
 
 ## Architectural Patterns
 
-### Pattern 1: Middleware Pipeline (API Gateway Pattern)
+### Pattern 1: Canonical Model + Adapter
 
-**What:** Sequential middleware steps for auth, limits, logging, and validation.
-**When to use:** Any API gateway/proxy where cross-cutting controls must be applied consistently.
-**Trade-offs:** Simple and testable, but order-sensitive and can hide control flow.
-
-**Example:**
-```python
-# pseudo-code
-app.add_middleware(RequestIDMiddleware)
-app.add_middleware(RateLimitMiddleware)
-app.add_middleware(AuthMiddleware)
-app.add_middleware(RedactionMiddleware)
-```
-
-### Pattern 2: Canonical Model + Adapter
-
-**What:** Normalize inbound requests to a neutral internal model, then map to upstream schema.
-**When to use:** When bridging incompatible APIs and needing stable internal semantics.
-**Trade-offs:** Extra mapping code but reduces churn from upstream changes.
+**What:** Normalize inbound Claude requests into a neutral internal model, then map to OpenAI Responses.
+**When to use:** Any compatibility proxy where both sides evolve independently.
+**Trade-offs:** More mapping code, but keeps API handlers stable and reduces churn.
 
 **Example:**
 ```python
-canonical = AnthropicToCanonical.from_request(req)
-upstream_payload = CanonicalToOpenAI.to_response(canonical)
+canonical = ClaudeToCanonical.from_messages(request)
+upstream_payload = CanonicalToResponses.to_request(canonical)
 ```
 
-### Pattern 3: Streaming Translation Adapter
+### Pattern 2: Streaming Event Transducer
 
-**What:** Stream upstream events through a transformer that emits the downstream stream format.
-**When to use:** Any SSE or chunked streaming compatibility endpoint.
-**Trade-offs:** Harder to retry; must avoid buffering full streams.
+**What:** Consume upstream SSE events, translate them into Claude stream events incrementally.
+**When to use:** `/v1/messages/stream` and tool-use streaming (input_json_delta).
+**Trade-offs:** Requires careful incremental parsing; cannot buffer entire stream.
+
+**Example:**
+```python
+async for event in openai_stream:
+    for downstream_event in transduce_event(event):
+        yield downstream_event
+```
+
+### Pattern 3: Redaction-as-Sink
+
+**What:** Apply PII redaction at the last possible step before emission to logs/metrics.
+**When to use:** Any request/response logging with privacy defaults.
+**Trade-offs:** Redaction adds cost; must avoid double-redaction and preserve debug IDs.
 
 ## Data Flow
 
-### Request Flow
+### Request Flow (non-stream)
 
 ```
 Client
   ↓
-HTTP Listener → Auth → Rate/Size Limits → Validation
+HTTP Router → Auth → Schema/Size Validation
   ↓
-Canonicalize → Map to Upstream → HTTP Client
+Canonicalize → Map to OpenAI Responses → OpenAI Client
   ↓
-Stream/Response → Map to Downstream → Error Mapper
+OpenAI Response → Map to Claude Response → Error Mapper
   ↓
 Client Response
 ```
 
+### Request Flow (stream)
+
+```
+Client
+  ↓
+HTTP Router → Auth → Schema/Size Validation
+  ↓
+Canonicalize → Map to OpenAI Responses → OpenAI Client (stream)
+  ↓
+SSE Event Stream → Transducer (incl input_json_delta handling)
+  ↓
+Claude SSE Stream → Client
+```
+
 ### Key Data Flows
 
-1. **Messages (non-stream):** request → canonical → map → upstream → response map → client.
-2. **Messages (stream):** request → upstream stream → incremental transform → SSE to client.
-3. **File upload:** request → local disk store → metadata index → response.
-4. **Batch job:** request → enqueue background job → poll status → response mapping.
+1. **Tool use streaming:** input_json_delta events are accumulated per tool block index, parsed on block stop, and emitted as Claude-compatible tool_use deltas.
+2. **Token counting:** `/v1/messages/count_tokens` maps request into OpenAI `/responses/input_tokens` call; returns only count to client.
+3. **Logging:** request/response summaries pass through redaction pipeline before logging and metrics emission.
 
 ## Scaling Considerations
 
 | Scale | Architecture Adjustments |
 |-------|--------------------------|
-| 0-1k users | Single FastAPI service, in-memory rate limits, local disk storage |
-| 1k-100k users | External rate limit store, shared file storage, structured logs + metrics |
-| 100k+ users | Separate streaming workers, distributed storage, multi-region upstream routing |
+| 0-1k req/day | Single service, in-memory rate limits, basic logs |
+| 1k-100k req/day | External rate limiter, streaming concurrency tuning |
+| 100k+ req/day | Dedicated streaming workers, shared config store |
 
 ### Scaling Priorities
 
-1. **First bottleneck:** streaming concurrency and upstream timeouts → tune HTTP client, increase worker count.
-2. **Second bottleneck:** file storage and batch jobs → move to shared storage and background worker queue.
+1. **First bottleneck:** streaming concurrency and SSE backpressure → tune worker concurrency and upstream timeouts.
+2. **Second bottleneck:** log volume and PII redaction cost → sampling + redaction cache/allowlist.
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Pass-through Without Canonicalization
+### Anti-Pattern 1: Buffering Streams for Translation
 
-**What people do:** Directly proxy requests to upstream and patch responses ad-hoc.
-**Why it's wrong:** Any upstream schema change causes widespread breakage and inconsistent semantics.
-**Do this instead:** Normalize to a canonical model then map in/out.
+**What people do:** Read the full upstream stream, then emit once complete.
+**Why it's wrong:** Breaks latency expectations and can exceed memory limits.
+**Do this instead:** Translate and emit events incrementally.
 
-### Anti-Pattern 2: Buffering Streams for Transformation
+### Anti-Pattern 2: Logging Raw Requests/Responses
 
-**What people do:** Collect full upstream stream, then emit response at end.
-**Why it's wrong:** Breaks latency expectations and increases memory pressure.
-**Do this instead:** Transform and emit incrementally.
+**What people do:** Dump raw payloads to logs for debugging.
+**Why it's wrong:** Violates privacy defaults and increases breach risk.
+**Do this instead:** Redact at log sink, store only structured metadata.
+
+### Anti-Pattern 3: Mixing Mapping Logic with HTTP Handlers
+
+**What people do:** Perform mapping inline inside route handlers.
+**Why it's wrong:** Hard to test and easy to regress across endpoints.
+**Do this instead:** Keep mapping in adapters and unit-test thoroughly.
 
 ## Integration Points
 
@@ -192,24 +216,35 @@ Client Response
 
 | Service | Integration Pattern | Notes |
 |---------|---------------------|-------|
-| OpenAI Responses API | HTTP client with retries/timeouts | Preserve streaming semantics; avoid buffering |
-| Observability backend | OTLP exporter | Redact PII before export |
+| OpenAI Responses API | HTTP client (stream + non-stream) | Use SSE streaming for `/v1/messages/stream` parity. |
+| OpenAI Input Tokens API | HTTP client | Drives `/v1/messages/count_tokens`. |
+| Observability backend | OTLP/HTTP exporter | Redact before export. |
 
 ### Internal Boundaries
 
 | Boundary | Communication | Notes |
 |----------|---------------|-------|
-| API layer ↔ Adapter layer | Direct function calls | Keep adapters pure and unit-testable |
-| Adapter ↔ Upstream client | Typed request objects | Avoid leaking upstream SDK types |
-| API layer ↔ Storage | Service interface | Enables local disk now, swap later |
+| API ↔ Adapters | Direct function calls | Keeps handlers thin and testable. |
+| Adapters ↔ Streaming | Event DTOs | Avoid leaking SSE specifics into mapping. |
+| API ↔ Observability | Logger interface | Centralized redaction. |
+
+## MVP Build Order (Dependency-Driven)
+
+1. **Canonical models + request/response mappers** → required before any endpoint can respond.
+2. **OpenAI client (non-stream) + error mapping** → enables `/v1/messages` baseline.
+3. **Token count client + mapper** → enables `/v1/messages/count_tokens`.
+4. **Streaming parser/transducer (text deltas)** → enables `/v1/messages/stream` basic.
+5. **Tool-use mapping + input_json_delta handling** → tool parity for streaming and non-stream.
+6. **PII redaction + structured logging** → default-safe observability.
+7. **Rate/size limits + request IDs** → production hardening.
 
 ## Sources
 
-- Envoy architecture overview (listeners, filters, upstream clusters, observability): https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/arch_overview
-- Kong Gateway overview (API gateway as reverse proxy; plugins for auth/limits/observability): https://docs.konghq.com/gateway/latest/
-- NGINX proxy module (proxying and buffering behavior): https://nginx.org/en/docs/http/ngx_http_proxy_module.html
-- FastAPI middleware (ASGI middleware pipeline): https://fastapi.tiangolo.com/advanced/middleware/
+- OpenAI Responses API reference (streaming + input tokens): https://platform.openai.com/docs/api-reference/responses
+- OpenAI Responses streaming events: https://platform.openai.com/docs/api-reference/responses-streaming
+- Anthropic Messages streaming (content_block_delta + input_json_delta): https://docs.anthropic.com/en/api/messages-streaming
+- Anthropic Messages API reference: https://docs.anthropic.com/en/api/messages
 
 ---
-*Architecture research for: API compatibility gateway / proxy*
+*Architecture research for: API compatibility proxy (Claude → OpenAI Responses)*
 *Researched: 2026-01-25*

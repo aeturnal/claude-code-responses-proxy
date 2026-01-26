@@ -1,6 +1,6 @@
 # Feature Research
 
-**Domain:** API compatibility gateways/proxies (Anthropic Messages → OpenAI Responses)
+**Domain:** OpenAI Responses → Anthropic Messages compatibility proxy (Claude Code target)
 **Researched:** 2026-01-25
 **Confidence:** MEDIUM
 
@@ -12,16 +12,13 @@ Features users assume exist. Missing these = product feels incomplete.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| **OpenAI-compatible HTTP surface** (base_url + OpenAI client interoperability) | Gateways are expected to be drop-in for existing OpenAI clients | MEDIUM | vLLM and LocalAI both advertise OpenAI-compatible servers as a baseline capability. | 
-| **Core endpoint coverage** (Responses/Chat/Completions equivalents as needed) | Users expect the proxy to implement the common OpenAI endpoints they already use | MEDIUM | vLLM lists supported APIs like `/v1/responses`, `/v1/chat/completions`, `/v1/completions` as part of compatibility. Scope to Anthropic Messages mapping. | 
-| **Streaming (SSE)** | Real-time UX and tool-using flows assume streaming responses | MEDIUM | OpenAI Responses supports server-sent event streaming; proxies must pass/translate streaming events faithfully. | 
-| **Schema translation (request + response)** | Compatibility requires field/shape mapping across providers | HIGH | Map Anthropic Messages (role/content blocks, tool use, system) to OpenAI Responses and back; preserve semantics. | 
-| **Error translation + status codes** | Clients depend on stable error shapes and HTTP semantics | MEDIUM | Provide deterministic errors when upstream fails; avoid opaque provider errors. | 
-| **Authentication handling** (API keys, env-based config) | Standard for API gateways/proxies | LOW | LiteLLM proxy exposes auth hooks; baseline support expected. | 
-| **Rate limiting / throttling** | Protects upstream providers and avoids abuse | MEDIUM | LiteLLM proxy includes rate limiting as a standard gateway feature. | 
-| **Observability hooks** (logging + metrics) | Operational visibility is expected in gateway products | MEDIUM | LiteLLM proxy highlights logging hooks and cost/usage tracking as core features. | 
-| **Request size / token limits enforcement** | Prevents upstream failures and predictable errors | MEDIUM | Necessary when translating between providers with different hard limits. | 
-| **Health endpoint + readiness** | Required for deployment + orchestration | LOW | Standard in gateways; not provider-specific but expected in production.
+| **/v1/messages request/response parity** | Claude Code speaks Anthropic Messages; proxy must accept same schema and return expected Message object | HIGH | Must support `messages` array with `role` + `content` (string or blocks), top-level `system`, `max_tokens`, `model`, `tools`, `tool_choice`, `stream`. Consecutive roles coalesce; `assistant` final message continues response. Map to OpenAI Responses inputs; preserve `content` block types. Source: Anthropic Messages API. | 
+| **/v1/messages/stream SSE event sequence** | Streaming is core to Claude Code UX | HIGH | SSE events must follow Anthropic streaming flow: `message_start` → content block start/delta/stop → `message_delta` → `message_stop`, plus optional `ping` and `error`. Ensure event `type` fields match. Source: Anthropic streaming docs. |
+| **Tool use content blocks** | Claude Code relies on tool invocations | HIGH | Responses must emit `tool_use` content blocks with `id`, `name`, `input` and accept `tool_result` blocks in subsequent user messages. Should map OpenAI tool calls to Anthropic tool blocks. Source: Anthropic Messages API + tool use docs. |
+| **`input_json_delta` streaming for tool inputs** | Claude Code expects partial tool input emission | HIGH | Streaming must emit `content_block_delta` with `delta.type = input_json_delta` and `partial_json` fragments for tool input; final `tool_use.input` is object at `content_block_stop`. Must accumulate partial JSON. Source: Anthropic streaming docs (input_json_delta). |
+| **/v1/messages/count_tokens** | Claude Code uses token preflight to avoid 400s | MEDIUM | Must accept same message schema as `/v1/messages` and return token count object. Map to OpenAI input token counting if available, otherwise approximate. Source: Anthropic count_tokens API. |
+| **Error shape + HTTP status parity** | Client error handling expects Anthropic-style errors | MEDIUM | Translate OpenAI errors into Anthropic error envelope; emit `error` SSE events during stream. Source: Anthropic streaming error events. |
+| **PII-redacted structured logging (default)** | Required in milestone context; also enterprise expectation | MEDIUM | Log requests/responses with redaction of user content and tool inputs by default; allow opt-out via config. Ensure no raw PII in logs. (No direct API source; requirement from milestone context.) |
 
 ### Differentiators (Competitive Advantage)
 
@@ -29,14 +26,9 @@ Features that set the product apart. Not required, but valuable.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| **Semantic fidelity to Anthropic Messages** (content blocks, tool use, system rules) | Minimizes behavioral drift for Claude Code users | HIGH | Go beyond field mapping; enforce Anthropic semantics even when OpenAI Responses structure differs. | 
-| **Hybrid error shape (OpenAI-style + Anthropic detail)** | Improves debuggability while maintaining compatibility | MEDIUM | Helps developers without breaking compatibility clients. | 
-| **Provider routing + fallback** | Higher availability and cost/perf optimization | HIGH | LiteLLM Router emphasizes retries/fallback across providers; gateway can apply to responses. | 
-| **PII redaction in logs by default** | Privacy + compliance differentiator | MEDIUM | Especially valuable for enterprise/local usage. | 
-| **Token accounting that matches Anthropic counting** | Predictable billing + UX parity | HIGH | Aligns with `count_tokens` behavior and message formatting rules. | 
-| **Local file storage with file proxying** | Supports `/v1/files` without external dependencies | MEDIUM | Useful for dev + on-prem without S3/GCS. | 
-| **Compatibility test suite / self-test CLI** | Confidence in upgrades, reduces regressions | MEDIUM | Differentiates from generic proxies that don’t guarantee semantic parity. | 
-| **OpenTelemetry tracing** (logs+metrics+traces out of box) | Enterprise readiness and debugging | MEDIUM | Goes beyond basic logging hooks. |
+| **Deterministic mapping report** | Debugging across two APIs becomes transparent | MEDIUM | Optional debug header/flag to include mapping metadata (e.g., OpenAI response IDs, translated tool calls). Keep off by default to avoid leaking data. |
+| **Stream resilience helpers** | Better developer experience in flaky networks | MEDIUM | Buffer + resume suggestions to emulate Anthropic guidance on recovery; can emit client hints on reconnect strategy. (Derived from streaming docs.) |
+| **Compatibility strictness modes** | Lets users choose strict Anthropic parity vs pragmatic fallback | MEDIUM | Strict mode rejects unsupported features; permissive mode maps best-effort and annotates `metadata` for mismatches. |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
@@ -44,48 +36,32 @@ Features that seem good but create problems.
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| **“Support every OpenAI feature immediately”** | Perception of complete compatibility | Leads to constant churn; breaks Anthropic semantics; unsafe defaults | Ship a compatibility matrix + explicit “supported/not supported” responses. |
-| **Silent parameter dropping** | Avoids client errors | Hides bugs and changes behavior unexpectedly | Return validation errors or explicit warnings in response metadata. |
-| **Automatic prompt rewriting** | “Improve” results across providers | Changes user intent; hard to debug | Provide opt-in transformation hooks with clear audit logs. |
-| **Stateful storage of user prompts by default** | Convenience for debugging | Privacy risk, compliance burden | Explicit opt-in storage with redaction + retention controls. |
-| **Opaque provider failover** | Better uptime | Can change model behavior mid-session | Allow explicit routing policy; surface fallback in response metadata. |
+| **“Support every OpenAI Responses feature immediately”** | Users want full OpenAI surface area | Mismatch with Claude Code needs; increases scope and breaks parity expectations | Focus on `/v1/messages` + streaming + count_tokens first; add OpenAI extras later behind flags. |
+| **Passing through raw tool inputs/outputs to logs** | Easier debugging | Violates PII/redaction requirement and increases risk | Provide redacted logs + opt-in secure debug mode. |
+| **Non-Anthropic streaming shape** | Simpler implementation | Breaks Claude Code parsing (expects Anthropic event types) | Keep Anthropic SSE event flow; adapt OpenAI stream to match. |
 
 ## Feature Dependencies
 
 ```
-OpenAI-compatible HTTP surface
-    └──requires──> Schema translation (Anthropic Messages ↔ OpenAI Responses)
-                           └──requires──> Deterministic error mapping
+/v1/messages schema parity
+    └──requires──> Tool use block mapping
+                       └──requires──> input_json_delta streaming
 
-Streaming (SSE)
-    └──requires──> Schema translation (for event types + deltas)
+Streaming SSE support
+    └──requires──> error event translation
 
-Count tokens endpoint
-    └──requires──> Tokenizer integration + message formatting rules
+/v1/messages/count_tokens
+    └──requires──> shared request validation (messages/system/tools)
 
-Files API (upload/list/get)
-    └──requires──> Local file storage + path validation + size limits
-
-Batch requests
-    └──requires──> Files API + job orchestration
-
-Observability (metrics/traces)
-    └──requires──> Request IDs + structured logging
-
-PII redaction
-    └──requires──> Logging pipeline + configurable redaction rules
-
-Routing + fallback
-    └──requires──> Provider abstraction + retry/backoff
+PII-redacted structured logging
+    └──enhances──> All endpoints (request/response auditability)
 ```
 
 ### Dependency Notes
 
-- **OpenAI-compatible HTTP surface requires schema translation:** compatibility is impossible without request/response mapping.
-- **Streaming requires schema translation:** SSE events must be converted without breaking client expectations.
-- **Count tokens requires tokenizer + format rules:** Anthropic token counting is sensitive to message formatting.
-- **Files API requires local storage:** file endpoints are meaningless without a stable storage layer.
-- **Batch requires Files:** batch input typically references uploaded files.
+- **/v1/messages schema parity requires tool block mapping:** tool blocks are part of `content` and must round-trip through proxy.
+- **Tool block mapping requires input_json_delta streaming:** Claude Code expects partial JSON deltas for tool inputs when streaming.
+- **count_tokens requires shared validation:** same message schema and tool definitions must be accepted to count tokens reliably.
 
 ## MVP Definition
 
@@ -93,48 +69,36 @@ Routing + fallback
 
 Minimum viable product — what's needed to validate the concept.
 
-- [ ] **/v1/messages** (Anthropic input shape) → OpenAI Responses translation — core compatibility
-- [ ] **/v1/messages/stream** streaming translation — required for real-time tooling
-- [ ] **/v1/messages/count_tokens** — Claude Code parity
-- [ ] **Deterministic error mapping** — avoids client breakage
-- [ ] **Basic auth via env var** — minimum security
-- [ ] **Structured logging + metrics** — operational baseline
-- [ ] **Request size limits** — predictable failures
+- [ ] **/v1/messages endpoint parity** — core compatibility for Claude Code.
+- [ ] **/v1/messages/stream SSE with input_json_delta** — required for tool-use streaming semantics.
+- [ ] **/v1/messages/count_tokens** — required for client-side token budgeting.
+- [ ] **PII-redacted structured logging by default** — explicit milestone requirement.
 
 ### Add After Validation (v1.x)
 
 Features to add once core is working.
 
-- [ ] **/v1/files** with local disk storage — enables file workflows
-- [ ] **/v1/messages/batches** — async throughput + cost control
-- [ ] **PII redaction in logs** — privacy for shared environments
-- [ ] **Fallback routing (multi-provider)** — higher availability
+- [ ] **Strict vs permissive compatibility modes** — add after basic stability.
+- [ ] **Debug mapping metadata (opt-in)** — add once basic parity is verified.
 
 ### Future Consideration (v2+)
 
 Features to defer until product-market fit is established.
 
-- [ ] **Full OpenAI surface area parity** (audio, image, etc.) — large scope
-- [ ] **Advanced policy/guardrail engine** — only needed for enterprise deployments
-- [ ] **Multi-tenant billing + budget controls** — if proxy is hosted SaaS
+- [ ] **/v1/files** — listed as nice-to-have; requires storage and policy work.
+- [ ] **/v1/messages/batches** — batch semantics are complex; defer.
 
 ## Feature Prioritization Matrix
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| /v1/messages translation | HIGH | HIGH | P1 |
-| Streaming translation | HIGH | MEDIUM | P1 |
-| count_tokens endpoint | HIGH | MEDIUM | P1 |
-| Error mapping | HIGH | MEDIUM | P1 |
-| Auth via env var | MEDIUM | LOW | P1 |
-| Logging + metrics | HIGH | MEDIUM | P1 |
-| Request size limits | MEDIUM | LOW | P1 |
-| Files API (local) | MEDIUM | MEDIUM | P2 |
-| Batches API | MEDIUM | HIGH | P2 |
-| PII redaction | MEDIUM | MEDIUM | P2 |
-| Routing + fallback | MEDIUM | HIGH | P2 |
-| Full OpenAI parity | LOW | HIGH | P3 |
-| Advanced policy engine | LOW | HIGH | P3 |
+| /v1/messages parity | HIGH | HIGH | P1 |
+| /v1/messages/stream SSE parity | HIGH | HIGH | P1 |
+| input_json_delta streaming for tools | HIGH | HIGH | P1 |
+| /v1/messages/count_tokens | MEDIUM | MEDIUM | P1 |
+| PII-redacted structured logging | HIGH | MEDIUM | P1 |
+| Strict/permissive compatibility modes | MEDIUM | MEDIUM | P2 |
+| Debug mapping metadata | MEDIUM | MEDIUM | P2 |
 
 **Priority key:**
 - P1: Must have for launch
@@ -143,22 +107,21 @@ Features to defer until product-market fit is established.
 
 ## Competitor Feature Analysis
 
-| Feature | LiteLLM Proxy | vLLM OpenAI-Compatible Server | LocalAI | Our Approach |
-|---------|---------------|-------------------------------|---------|--------------|
-| OpenAI-compatible HTTP surface | Yes (proxy server) | Yes (OpenAI-compatible server) | Yes (drop-in replacement) | Yes (compatibility gateway) |
-| Routing/fallback | Yes (router + retries) | Not core | Not core | Optional (post-MVP) |
-| Logging/observability hooks | Yes (callbacks) | Not emphasized | Not emphasized | Built-in logs+metrics+tracing |
-| Rate limiting | Yes | Not emphasized | Not emphasized | Basic rate limiting |
-| Anthropic Messages semantic fidelity | Not explicit | Not explicit | Not explicit | **Primary differentiator** |
+| Feature | Competitor A | Competitor B | Our Approach |
+|---------|--------------|--------------|--------------|
+| Messages endpoint | Anthropic Messages API | OpenAI Responses API | Accept Anthropic schema, translate to OpenAI Responses.
+| Streaming events | Anthropic SSE events w/ `content_block_*` | OpenAI Responses streaming events | Emit Anthropic SSE event types regardless of upstream.
+| Tool use | `tool_use` + `tool_result` blocks | OpenAI function/tool calls | Map OpenAI tool calls to Anthropic tool blocks.
+| Token counting | `/v1/messages/count_tokens` | `/v1/responses/input_tokens` | Provide Anthropic endpoint; use OpenAI input token count when possible.
 
 ## Sources
 
-- LiteLLM docs (proxy/gateway features, logging hooks, rate limiting, routing): https://docs.litellm.ai/ (Getting Started + proxy sections)
-- vLLM OpenAI-compatible server (supported APIs like /v1/responses, /v1/chat/completions, /v1/completions): https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html
-- LocalAI (OpenAI-compatible drop-in replacement): https://localai.io/
-- OpenAI Responses API (streaming + responses surface): https://platform.openai.com/docs/api-reference/responses
-- Anthropic Messages API (message/content block semantics): https://docs.anthropic.com/en/docs/api/messages
+- Anthropic Messages API: https://docs.anthropic.com/en/api/messages
+- Anthropic Streaming Messages (SSE, input_json_delta): https://docs.anthropic.com/en/api/messages-streaming
+- Anthropic Count Tokens: https://docs.anthropic.com/en/api/messages-count-tokens
+- OpenAI Responses API: https://platform.openai.com/docs/api-reference/responses
+- OpenAI Responses Streaming: https://platform.openai.com/docs/api-reference/responses-streaming
 
 ---
-*Feature research for: API compatibility gateways/proxies (Anthropic Messages → OpenAI Responses)*
+*Feature research for: OpenAI Responses Compatibility Proxy*
 *Researched: 2026-01-25*
