@@ -71,7 +71,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — Add OpenAI streaming transport + SSE parsing
+- [x] 04-01-PLAN.md — Add OpenAI streaming transport + SSE parsing
 - [ ] 04-02-PLAN.md — Translate OpenAI stream events to Anthropic SSE + tool_use deltas
 - [ ] 04-03-PLAN.md — Implement /v1/messages/stream endpoint + logging/error handling
 
@@ -85,4 +85,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. Core Messages Parity | 4/4 | Complete | 2026-01-26 |
 | 2. Token Counting Alignment | 1/1 | Complete | 2026-01-26 |
 | 3. Privacy-First Observability | 2/2 | Complete | 2026-01-26 |
-| 4. Streaming + Tool Use Parity | 0/TBD | Not started | - |
+| 4. Streaming + Tool Use Parity | 1/3 | In progress | 2026-01-26 |
