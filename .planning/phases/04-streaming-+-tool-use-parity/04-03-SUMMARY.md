@@ -62,7 +62,7 @@ Each task was committed atomically:
 1. **Task 1: Add /v1/messages/stream SSE endpoint** - `a0ab28c` (feat)
 2. **Task 2: Handle streaming errors + observability logging** - `8526fa8` (feat)
 
-**Plan metadata:** _pending_
+**Plan metadata:** 4e8e0ea
 
 _Note: TDD tasks may have multiple commits (test → feat → refactor)_
 
@@ -74,10 +74,20 @@ None - followed plan as specified.
 
 ## Deviations from Plan
 
-None - plan executed exactly as written.
+### Auto-fixed Issues
+
+1. **[Rule 1 - Bug] Stabilized tool_use streaming metadata and input parsing**
+   - **Issue:** Tool-use SSE blocks emitted null/empty ids and inputs during live streaming.
+   - **Fix:** Unwrapped SSE payloads, handled function_call delta/done events, and preserved first call id/name.
+   - **Commit:** e36bc3d
+
+2. **[Rule 1 - Bug] Accepted tool_use blocks in request history**
+   - **Issue:** OpenAI upstream rejected messages containing tool_use blocks during tool-result turns.
+   - **Fix:** Extended Anthropic schema and mapped tool_use blocks to safe text for Responses input.
+   - **Commit:** 1f5819f
 
 ## Issues Encountered
-- Manual streaming verification (uvicorn + curl) was not run in this automation environment.
+None after human verification; streaming checks completed via curl.
 
 ## User Setup Required
 

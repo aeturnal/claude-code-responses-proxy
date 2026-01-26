@@ -15,9 +15,9 @@ Table-stakes MVP requirements for compatibility parity.
 
 ### Streaming + Tool Use
 
-- [ ] **STREAM-01**: `/v1/messages/stream` emits Anthropic-compatible SSE events (message/content block lifecycle).
-- [ ] **STREAM-02**: Tool use blocks are emitted in Anthropic format during streaming.
-- [ ] **STREAM-03**: `input_json_delta` is accumulated correctly and finalized in tool blocks.
+- [x] **STREAM-01**: `/v1/messages/stream` emits Anthropic-compatible SSE events (message/content block lifecycle).
+- [x] **STREAM-02**: Tool use blocks are emitted in Anthropic format during streaming.
+- [x] **STREAM-03**: `input_json_delta` is accumulated correctly and finalized in tool blocks.
 
 ### Token Counting
 
@@ -61,9 +61,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CORE-01 | Phase 1 | Complete |
 | CORE-02 | Phase 1 | Complete |
 | CORE-03 | Phase 1 | Complete |
-| STREAM-01 | Phase 4 | Pending |
-| STREAM-02 | Phase 4 | Pending |
-| STREAM-03 | Phase 4 | Pending |
+| STREAM-01 | Phase 4 | Complete |
+| STREAM-02 | Phase 4 | Complete |
+| STREAM-03 | Phase 4 | Complete |
 | TOK-01 | Phase 2 | Complete |
 | TOK-02 | Phase 2 | Complete |
 | OBS-01 | Phase 3 | Complete |
@@ -76,4 +76,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-01-25*
-*Last updated: 2026-01-26 after Phase 3 completion*
+*Last updated: 2026-01-26 after Phase 4 completion*
