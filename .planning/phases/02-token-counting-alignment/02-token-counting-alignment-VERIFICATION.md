@@ -1,19 +1,15 @@
 ---
 phase: 02-token-counting-alignment
-verified: 2026-01-26T04:29:04Z
-status: human_needed
+verified: 2026-01-26T12:04:40Z
+status: verified
 score: 3/3 must-haves verified
-human_verification:
-  - test: "Compare /v1/messages/count_tokens output to OpenAI billing count"
-    expected: "Counts match OpenAI's reported input token usage for the same mapped request"
-    why_human: "Requires external OpenAI service/billing behavior comparison"
 ---
 
 # Phase 2: Token Counting Alignment Verification Report
 
 **Phase Goal:** Users can preflight token usage with Anthropic-compatible counting aligned to OpenAI billing.
-**Verified:** 2026-01-26T04:29:04Z
-**Status:** human_needed
+**Verified:** 2026-01-26T12:04:40Z
+**Status:** verified
 **Re-verification:** No — initial verification
 
 ## Goal Achievement
@@ -50,7 +46,7 @@ human_verification:
 
 | Requirement | Status | Blocking Issue |
 | --- | --- | --- |
-| TOK-01: /v1/messages/count_tokens returns token counts aligned with OpenAI billing. | ? NEEDS HUMAN | Requires external OpenAI comparison. |
+| TOK-01: /v1/messages/count_tokens returns token counts aligned with OpenAI billing. | ✓ VERIFIED | Evidence: `.planning/phases/06-token-count-billing-alignment-verification/06-token-count-billing-alignment-report.md` (2026-01-26 run). |
 | TOK-02: Token counting normalizes system/tool content consistently with request mapping. | ✓ SATISFIED | Shared `map_anthropic_request_to_openai` used by both endpoints. |
 
 ### Anti-Patterns Found
@@ -59,12 +55,9 @@ None detected in phase-modified files.
 
 ### Human Verification Required
 
-1. **OpenAI billing alignment check**
-   **Test:** Send identical requests to `/v1/messages/count_tokens` and OpenAI billing/token-counting reference and compare input token counts.
-   **Expected:** Counts match OpenAI billing semantics for the mapped request.
-   **Why human:** Requires live OpenAI service comparison.
+None — OpenAI billing alignment verified via Phase 6 harness report.
 
 ---
 
-_Verified: 2026-01-26T04:29:04Z_
+_Verified: 2026-01-26T12:04:40Z_
 _Verifier: Claude (gsd-verifier)_
