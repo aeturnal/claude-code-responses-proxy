@@ -12,7 +12,7 @@ Deliver a production-grade compatibility proxy that preserves Anthropic Messages
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Core Messages Parity** - `/v1/messages` request/response parity with deterministic error shapes.
+- [x] **Phase 1: Core Messages Parity** - `/v1/messages` request/response parity with deterministic error shapes.
 - [ ] **Phase 2: Token Counting Alignment** - `/v1/messages/count_tokens` aligned with OpenAI billing semantics.
 - [ ] **Phase 3: Privacy-First Observability** - PII-redacted structured logs with correlation IDs.
 - [ ] **Phase 4: Streaming + Tool Use Parity** - `/v1/messages/stream` SSE parity including tool_use and input_json_delta.
@@ -33,7 +33,7 @@ Plans:
 - [x] 01-01-PLAN.md — Scaffold dependencies, config, and OpenAI transport
 - [x] 01-02-PLAN.md — Define request schemas + Anthropic→OpenAI mapping
 - [x] 01-03-PLAN.md — Normalize OpenAI responses + stop_reason derivation
-- [ ] 01-04-PLAN.md — Implement /v1/messages handler + error envelopes
+- [x] 01-04-PLAN.md — Implement /v1/messages handler + error envelopes
 
 ### Phase 2: Token Counting Alignment
 **Goal**: Users can preflight token usage with Anthropic-compatible counting aligned to OpenAI billing.
@@ -79,7 +79,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Messages Parity | 3/4 | In progress | - |
+| 1. Core Messages Parity | 4/4 | Complete | 2026-01-26 |
 | 2. Token Counting Alignment | 0/TBD | Not started | - |
 | 3. Privacy-First Observability | 0/TBD | Not started | - |
 | 4. Streaming + Tool Use Parity | 0/TBD | Not started | - |
