@@ -22,19 +22,13 @@ class InputMessageItem(BaseModel):
     content: List[InputTextItem]
 
 
-class FunctionDefinition(BaseModel):
-    """OpenAI function tool definition."""
+class FunctionTool(BaseModel):
+    """OpenAI Responses function tool definition."""
 
+    type: Literal["function"] = "function"
     name: str
     description: Optional[str] = None
     parameters: Dict[str, Any] = Field(default_factory=dict)
-
-
-class FunctionTool(BaseModel):
-    """OpenAI Responses function tool wrapper."""
-
-    type: Literal["function"] = "function"
-    function: FunctionDefinition
     strict: bool = False
 
 

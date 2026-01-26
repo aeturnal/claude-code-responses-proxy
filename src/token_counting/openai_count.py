@@ -7,12 +7,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import tiktoken
 
-from src.schema.openai import (
-    FunctionTool,
-    InputMessageItem,
-    InputTextItem,
-    OpenAIResponsesRequest,
-)
+from src.schema.openai import FunctionTool, InputMessageItem, InputTextItem
 
 CHAT_FALLBACK_MODEL = "gpt-4o-mini-2024-07-18"
 KNOWN_CHAT_MODELS = {
@@ -45,6 +40,16 @@ def get_encoding(model: str) -> tiktoken.Encoding:
         return tiktoken.encoding_for_model(model)
     except KeyError:
         return tiktoken.get_encoding("o200k_base")
+
+
+def _as_dict(value: Any) -> Dict[str, Any]:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(exclude_none=True)
+    if hasattr(value, "dict"):
+        return value.dict(exclude_none=True)
+    if isinstance(value, dict):
+        return value
+    return {}
 
 
 def _normalize_message_item(message: Any) -> Dict[str, str]:
@@ -106,19 +111,15 @@ def count_message_tokens(messages: List[Dict[str, str]], model: str) -> int:
 
 def _normalize_tool(tool: Any) -> Dict[str, Any]:
     if isinstance(tool, FunctionTool):
-        function = tool.function
-    elif isinstance(tool, dict):
-        function = tool.get("function", {})
+        tool_payload = _as_dict(tool)
     else:
-        function = getattr(tool, "function", {})
+        tool_payload = _as_dict(tool)
 
-    if hasattr(function, "model_dump"):
-        function_payload = function.model_dump(exclude_none=True)
-    elif hasattr(function, "dict"):
-        function_payload = function.dict(exclude_none=True)
-    else:
-        function_payload = function
-    return function_payload if isinstance(function_payload, dict) else {}
+    if "function" in tool_payload:
+        function_payload = _as_dict(tool_payload.get("function"))
+        return function_payload
+
+    return tool_payload
 
 
 def count_tool_tokens(tools: Optional[Iterable[Any]], model: str) -> int:
@@ -148,19 +149,13 @@ def count_tool_tokens(tools: Optional[Iterable[Any]], model: str) -> int:
     return total_tokens
 
 
-def count_openai_request_tokens(
-    request: OpenAIResponsesRequest | Dict[str, Any],
-) -> int:
+def count_openai_request_tokens(request: Any) -> int:
     """Count input tokens for an OpenAI Responses request."""
 
-    if hasattr(request, "model_dump"):
-        payload = request.model_dump(exclude_none=True)
-    elif hasattr(request, "dict"):
-        payload = request.dict(exclude_none=True)
-    else:
-        payload = request
-
-    model = payload["model"]
+    payload = _as_dict(request)
+    model = payload.get("model")
+    if not model:
+        raise ValueError("model is required for token counting")
     input_items = payload.get("input", [])
     messages = _normalize_messages(input_items)
     instructions = payload.get("instructions")

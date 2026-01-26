@@ -13,8 +13,8 @@ from src.token_counting.openai_count import count_openai_request_tokens
 router = APIRouter()
 
 
-@router.post("/v1/messages/count_tokens")
-async def count_tokens(request: MessagesRequest) -> CountTokensResponse | JSONResponse:
+@router.post("/v1/messages/count_tokens", response_model=CountTokensResponse)
+async def count_tokens(request: MessagesRequest):
     """Return OpenAI-aligned input token counts for an Anthropic request."""
 
     try:
