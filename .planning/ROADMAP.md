@@ -57,7 +57,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Add observability config, logging setup, and correlation ID middleware
+- [x] 03-01-PLAN.md — Add observability config, logging setup, and correlation ID middleware
 - [ ] 03-02-PLAN.md — Redaction utilities + request/response logging with correlation propagation
 
 ### Phase 4: Streaming + Tool Use Parity
@@ -82,5 +82,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. Core Messages Parity | 4/4 | Complete | 2026-01-26 |
 | 2. Token Counting Alignment | 1/1 | Complete | 2026-01-26 |
-| 3. Privacy-First Observability | 0/TBD | Not started | - |
+| 3. Privacy-First Observability | 1/2 | In progress | - |
 | 4. Streaming + Tool Use Parity | 0/TBD | Not started | - |
