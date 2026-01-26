@@ -68,10 +68,12 @@ Plans:
   1. User can open `/v1/messages/stream` and receive Anthropic-compatible message/content block lifecycle events in order.
   2. Tool use blocks stream in Anthropic format and complete tool blocks are emitted at block stop.
   3. `input_json_delta` events are accumulated during streaming and appear as finalized input JSON in tool blocks.
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: TBD
+- [ ] 04-01-PLAN.md — Add OpenAI streaming transport + SSE parsing
+- [ ] 04-02-PLAN.md — Translate OpenAI stream events to Anthropic SSE + tool_use deltas
+- [ ] 04-03-PLAN.md — Implement /v1/messages/stream endpoint + logging/error handling
 
 ## Progress
 
