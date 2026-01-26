@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from src.errors.anthropic_error import build_anthropic_error
+from src.handlers.count_tokens import router as count_tokens_router
 from src.handlers.messages import router as messages_router
 
 app = FastAPI()
@@ -26,3 +27,4 @@ async def handle_validation_error(
 
 
 app.include_router(messages_router)
+app.include_router(count_tokens_router)

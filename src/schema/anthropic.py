@@ -59,3 +59,9 @@ class MessagesRequest(BaseModel):
     tools: Optional[List[ToolDefinition]] = None
     tool_choice: Optional[ToolChoice] = None
     max_tokens: Optional[int] = None
+
+
+class CountTokensResponse(BaseModel):
+    """Anthropic /v1/messages/count_tokens response model."""
+
+    input_tokens: int
