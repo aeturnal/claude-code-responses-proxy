@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from asgi_correlation_id import CorrelationIdMiddleware
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -9,8 +10,13 @@ from fastapi.responses import JSONResponse
 from src.errors.anthropic_error import build_anthropic_error
 from src.handlers.count_tokens import router as count_tokens_router
 from src.handlers.messages import router as messages_router
+from src.middleware.observability import ObservabilityMiddleware
+from src.observability.logging import configure_logging
 
 app = FastAPI()
+configure_logging()
+app.add_middleware(CorrelationIdMiddleware, header_name="X-Correlation-ID")
+app.add_middleware(ObservabilityMiddleware)
 
 
 @app.exception_handler(RequestValidationError)
