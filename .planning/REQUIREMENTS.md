@@ -9,9 +9,9 @@ Table-stakes MVP requirements for compatibility parity.
 
 ### Core Compatibility
 
-- [ ] **CORE-01**: Proxy accepts Anthropic-style `/v1/messages` requests and maps roles + system content to OpenAI Responses.
-- [ ] **CORE-02**: Proxy maps OpenAI Responses back to Anthropic response shape with correct `stop_reason` semantics.
-- [ ] **CORE-03**: Proxy returns deterministic error shapes (Anthropic envelope with OpenAI details).
+- [x] **CORE-01**: Proxy accepts Anthropic-style `/v1/messages` requests and maps roles + system content to OpenAI Responses.
+- [x] **CORE-02**: Proxy maps OpenAI Responses back to Anthropic response shape with correct `stop_reason` semantics.
+- [x] **CORE-03**: Proxy returns deterministic error shapes (Anthropic envelope with OpenAI details).
 
 ### Streaming + Tool Use
 
@@ -58,9 +58,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CORE-01 | Phase 1 | Pending |
-| CORE-02 | Phase 1 | Pending |
-| CORE-03 | Phase 1 | Pending |
+| CORE-01 | Phase 1 | Complete |
+| CORE-02 | Phase 1 | Complete |
+| CORE-03 | Phase 1 | Complete |
 | STREAM-01 | Phase 4 | Pending |
 | STREAM-02 | Phase 4 | Pending |
 | STREAM-03 | Phase 4 | Pending |
