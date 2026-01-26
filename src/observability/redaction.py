@@ -97,6 +97,12 @@ def _redact_text_blocks(
                 updated["content"] = redact_text(content, mode)
             redacted.append(updated)
             continue
+        if block.get("type") == "tool_use":
+            updated = dict(block)
+            if "input" in updated:
+                updated["input"] = _redact_value(updated.get("input"), mode)
+            redacted.append(updated)
+            continue
         redacted.append(block)
     return redacted
 

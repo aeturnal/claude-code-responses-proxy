@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import List, Optional, Union
 
 from src.config import resolve_openai_model
@@ -11,6 +12,7 @@ from src.schema.anthropic import (
     TextBlock,
     ToolChoiceSpecific,
     ToolResultBlock,
+    ToolUseBlock,
 )
 from src.schema.openai import (
     FunctionTool,
@@ -53,6 +55,14 @@ def _tool_result_to_text(block: ToolResultBlock) -> str:
     return "\n".join(texts)
 
 
+def _tool_use_to_text(block: ToolUseBlock) -> str:
+    try:
+        rendered_input = json.dumps(block.input, ensure_ascii=False, sort_keys=True)
+    except TypeError:
+        rendered_input = str(block.input)
+    return f"[tool_use:{block.name} id={block.id}] {rendered_input}"
+
+
 def _message_content_to_input(message: Message) -> List[InputTextItem]:
     if isinstance(message.content, str):
         return [InputTextItem(text=message.content)]
@@ -63,6 +73,9 @@ def _message_content_to_input(message: Message) -> List[InputTextItem]:
             continue
         if isinstance(block, ToolResultBlock):
             content_items.append(InputTextItem(text=_tool_result_to_text(block)))
+            continue
+        if isinstance(block, ToolUseBlock):
+            content_items.append(InputTextItem(text=_tool_use_to_text(block)))
             continue
         raise ValueError(
             f"Unsupported content block type: {getattr(block, 'type', None)}"

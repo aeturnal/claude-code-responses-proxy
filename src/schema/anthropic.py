@@ -22,7 +22,17 @@ class ToolResultBlock(BaseModel):
     content: Union[str, List[TextBlock]]
 
 
-ContentBlock = Union[TextBlock, ToolResultBlock]
+class ToolUseBlock(BaseModel):
+    """Anthropic tool use content block."""
+
+    type: Literal["tool_use"] = "tool_use"
+    id: str
+    name: str
+    input: Dict[str, Any]
+    cache_control: Optional[Dict[str, Any]] = None
+
+
+ContentBlock = Union[TextBlock, ToolResultBlock, ToolUseBlock]
 
 
 class Message(BaseModel):
