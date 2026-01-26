@@ -103,7 +103,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 06-01-PLAN.md — Add token count alignment verification harness + docs
+- [x] 06-01-PLAN.md — Add token count alignment verification harness + docs
 
 ## Progress
 
@@ -117,4 +117,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 3. Privacy-First Observability | 2/2 | Complete | 2026-01-26 |
 | 4. Streaming + Tool Use Parity | 3/3 | Complete | 2026-01-26 |
 | 5. Credential Error Envelope Parity | 1/1 | Complete | 2026-01-26 |
-| 6. Token Count Billing Alignment Verification | 0/1 | Planned | — |
+| 6. Token Count Billing Alignment Verification | 1/1 | Complete | 2026-01-26 |
