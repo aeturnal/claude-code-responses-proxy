@@ -54,10 +54,11 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Operator can see structured logs for requests and responses with PII redacted by default.
   2. Each request and stream log entry includes a correlation ID that can be used to trace a single interaction.
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: TBD
+- [ ] 03-01-PLAN.md — Add observability config, logging setup, and correlation ID middleware
+- [ ] 03-02-PLAN.md — Redaction utilities + request/response logging with correlation propagation
 
 ### Phase 4: Streaming + Tool Use Parity
 **Goal**: Users can stream Anthropic-compatible SSE events with tool_use and input_json_delta parity.
