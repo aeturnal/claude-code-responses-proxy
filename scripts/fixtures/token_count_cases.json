@@ -1,0 +1,54 @@
+{
+  "cases": [
+    {
+      "name": "basic_with_tools",
+      "payload": {
+        "model": "claude-3-5-sonnet-20240620",
+        "system": "You are a helpful assistant.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Count these tokens please."
+          }
+        ],
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "Get weather for a city",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "multi_message_no_tools",
+      "payload": {
+        "model": "claude-3-5-sonnet-20240620",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Summarize this."
+          },
+          {
+            "role": "assistant",
+            "content": "Sure, share the text."
+          },
+          {
+            "role": "user",
+            "content": "OpenAI billing tokens should match."
+          }
+        ]
+      }
+    }
+  ]
+}
