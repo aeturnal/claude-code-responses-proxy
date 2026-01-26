@@ -32,7 +32,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 - [x] 01-01-PLAN.md — Scaffold dependencies, config, and OpenAI transport
 - [x] 01-02-PLAN.md — Define request schemas + Anthropic→OpenAI mapping
-- [ ] 01-03-PLAN.md — Normalize OpenAI responses + stop_reason derivation
+- [x] 01-03-PLAN.md — Normalize OpenAI responses + stop_reason derivation
 - [ ] 01-04-PLAN.md — Implement /v1/messages handler + error envelopes
 
 ### Phase 2: Token Counting Alignment
@@ -79,7 +79,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Messages Parity | 2/4 | In progress | - |
+| 1. Core Messages Parity | 3/4 | In progress | - |
 | 2. Token Counting Alignment | 0/TBD | Not started | - |
 | 3. Privacy-First Observability | 0/TBD | Not started | - |
 | 4. Streaming + Tool Use Parity | 0/TBD | Not started | - |
