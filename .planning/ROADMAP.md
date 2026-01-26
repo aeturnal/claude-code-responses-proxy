@@ -27,10 +27,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. User can send an Anthropic-style `/v1/messages` request and receive a valid Anthropic response shape.
   2. Response `stop_reason` matches Anthropic semantics for typical completion and stop conditions.
   3. When upstream errors occur, user receives a deterministic Anthropic-style error envelope with OpenAI details included.
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 01-01: TBD
+- [ ] 01-01-PLAN.md — Scaffold dependencies, config, and OpenAI transport
+- [ ] 01-02-PLAN.md — Define request schemas + Anthropic→OpenAI mapping
+- [ ] 01-03-PLAN.md — Normalize OpenAI responses + stop_reason derivation
+- [ ] 01-04-PLAN.md — Implement /v1/messages handler + error envelopes
 
 ### Phase 2: Token Counting Alignment
 **Goal**: Users can preflight token usage with Anthropic-compatible counting aligned to OpenAI billing.
