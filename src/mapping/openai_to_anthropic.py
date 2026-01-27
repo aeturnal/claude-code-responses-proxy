@@ -8,15 +8,18 @@ from typing import Any, Dict, List, Optional
 
 def _parse_tool_input(arguments: Any) -> Any:
     if arguments is None:
-        return None
-    if isinstance(arguments, (dict, list)):
+        return {}
+    if isinstance(arguments, dict):
         return arguments
+    if isinstance(arguments, list):
+        return {}
     if not isinstance(arguments, str):
-        return arguments
+        return {}
     try:
-        return json.loads(arguments)
+        parsed = json.loads(arguments)
+        return parsed if isinstance(parsed, dict) else {}
     except (TypeError, json.JSONDecodeError):
-        return arguments
+        return {}
 
 
 def derive_stop_reason(response: Dict[str, Any]) -> str:

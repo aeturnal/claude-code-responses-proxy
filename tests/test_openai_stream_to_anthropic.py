@@ -120,3 +120,72 @@ def test_streaming_usage_maps_cached_tokens() -> None:
         "input_tokens": 42,
         "output_tokens": 12,
     }
+
+
+def test_tool_call_waits_for_name_and_skips_empty_delta() -> None:
+    events = [
+        {
+            "event": "response.created",
+            "data": {
+                "type": "response.created",
+                "response": {"id": "resp_1", "model": "gpt-4o"},
+            },
+        },
+        {
+            "event": "response.function_call_arguments.delta",
+            "data": {
+                "type": "response.function_call_arguments.delta",
+                "item_id": "call_1",
+                "output_index": 0,
+                "delta": "",
+                "sequence_number": 1,
+            },
+        },
+        {
+            "event": "response.function_call_arguments.delta",
+            "data": {
+                "type": "response.function_call_arguments.delta",
+                "item_id": "call_1",
+                "output_index": 0,
+                "delta": '{"city":',
+                "sequence_number": 2,
+            },
+        },
+        {
+            "event": "response.function_call_arguments.done",
+            "data": {
+                "type": "response.function_call_arguments.done",
+                "item_id": "call_1",
+                "output_index": 0,
+                "name": "get_weather",
+                "arguments": '{"city":"SF"}',
+                "sequence_number": 3,
+            },
+        },
+        {
+            "event": "response.completed",
+            "data": {
+                "type": "response.completed",
+                "response": {"status": "completed", "output": []},
+            },
+        },
+    ]
+
+    parsed = _collect_sse(events)
+    tool_start = next(
+        payload
+        for event, payload in parsed
+        if event == "content_block_start"
+        and payload.get("content_block", {}).get("type") == "tool_use"
+    )
+    assert tool_start["content_block"]["id"] == "call_1"
+    assert tool_start["content_block"]["name"] == "get_weather"
+
+    for event, payload in parsed:
+        if event == "content_block_delta":
+            assert payload["delta"]["partial_json"] != ""
+
+    tool_stop = next(
+        payload for event, payload in parsed if event == "content_block_stop"
+    )
+    assert tool_stop == {"type": "content_block_stop", "index": tool_stop["index"]}

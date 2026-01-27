@@ -113,12 +113,16 @@ def map_anthropic_request_to_openai(request: MessagesRequest) -> OpenAIResponses
         elif isinstance(request.tool_choice, ToolChoiceSpecific):
             tool_choice = ToolChoiceFunction(name=request.tool_choice.name)
 
+    max_output_tokens: Optional[int] = None
+    if request.max_tokens is not None and request.max_tokens >= 16:
+        max_output_tokens = request.max_tokens
+
     payload = OpenAIResponsesRequest(
         model=resolve_openai_model(request.model),
         instructions=instructions,
         input=input_items,
         tools=tools,
         tool_choice=tool_choice,
-        max_output_tokens=request.max_tokens,
+        max_output_tokens=max_output_tokens,
     )
     return payload

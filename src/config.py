@@ -26,6 +26,8 @@ OBS_LOG_ENABLED = _env_bool("OBS_LOG_ENABLED", False)
 OBS_LOG_FILE = os.getenv("OBS_LOG_FILE", "./logs/requests.log")
 OBS_REDACTION_MODE = os.getenv("OBS_REDACTION_MODE", "full")
 OBS_LOG_PRETTY = _env_bool("OBS_LOG_PRETTY", True)
+OBS_STREAM_LOG_ENABLED = _env_bool("OBS_STREAM_LOG_ENABLED", OBS_LOG_ENABLED)
+OBS_STREAM_LOG_FILE = os.getenv("OBS_STREAM_LOG_FILE", "./logs/streaming.log")
 
 
 class MissingOpenAIAPIKeyError(ValueError):

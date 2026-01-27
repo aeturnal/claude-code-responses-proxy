@@ -37,6 +37,7 @@ def _duration_ms(request: Request) -> int | None:
 
 
 @router.post("/v1/messages/count_tokens", response_model=CountTokensResponse)
+@router.post("/v1/messages/token_count", response_model=CountTokensResponse)
 async def count_tokens(http_request: Request, request: MessagesRequest):
     """Return OpenAI-aligned input token counts for an Anthropic request."""
 

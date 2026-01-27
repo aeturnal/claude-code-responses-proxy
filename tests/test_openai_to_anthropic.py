@@ -49,6 +49,31 @@ def test_function_call_maps_to_tool_use_and_stop_reason() -> None:
     ]
 
 
+def test_function_call_invalid_json_defaults_to_object() -> None:
+    response = {
+        "status": "completed",
+        "output": [
+            {
+                "type": "function_call",
+                "call_id": "call_1",
+                "name": "get_weather",
+                "arguments": "{not-json}",
+            }
+        ],
+    }
+
+    mapped = map_openai_response_to_anthropic(response)
+
+    assert mapped["content"] == [
+        {
+            "type": "tool_use",
+            "id": "call_1",
+            "name": "get_weather",
+            "input": {},
+        }
+    ]
+
+
 def test_incomplete_max_tokens_maps_stop_reason() -> None:
     response = {
         "status": "incomplete",

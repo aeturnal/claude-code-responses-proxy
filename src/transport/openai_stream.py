@@ -9,6 +9,7 @@ import httpx
 from asgi_correlation_id import correlation_id
 
 from src.config import OPENAI_BASE_URL, require_openai_api_key
+from src.observability.logging import get_stream_logger, streaming_logging_enabled
 from src.transport.openai_client import OpenAIUpstreamError
 
 
@@ -33,6 +34,7 @@ async def stream_openai_events(
     payload: Dict[str, Any],
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """Stream OpenAI Responses API events as parsed SSE frames."""
+    stream_logger = get_stream_logger() if streaming_logging_enabled() else None
     api_key = require_openai_api_key()
     url = f"{OPENAI_BASE_URL}/responses"
     headers = {"Authorization": f"Bearer {api_key}"}
@@ -46,13 +48,37 @@ async def stream_openai_events(
     current_event: Optional[str] = None
     data_lines: List[str] = []
 
+    if stream_logger:
+        stream_logger.info(
+            "upstream_connect_start",
+            endpoint="/v1/messages/stream",
+            upstream_url=url,
+            correlation_id=upstream_correlation_id,
+        )
+
     async with httpx.AsyncClient(timeout=300.0) as client:
         async with client.stream(
             "POST", url, json=payload, headers=headers
         ) as response:
             if response.is_error:
                 await response.aread()
+                if stream_logger:
+                    stream_logger.info(
+                        "upstream_connect_error",
+                        endpoint="/v1/messages/stream",
+                        upstream_url=url,
+                        correlation_id=upstream_correlation_id,
+                        status_code=response.status_code,
+                    )
                 raise OpenAIUpstreamError(response.status_code, _safe_json(response))
+            if stream_logger:
+                stream_logger.info(
+                    "upstream_connect_ok",
+                    endpoint="/v1/messages/stream",
+                    upstream_url=url,
+                    correlation_id=upstream_correlation_id,
+                    status_code=response.status_code,
+                )
 
             async for line in response.aiter_lines():
                 if line == "":

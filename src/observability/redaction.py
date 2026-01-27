@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any, Dict, Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+
+import structlog
 
 from src.config import OBS_REDACTION_MODE
 from src.schema.anthropic import MessagesRequest
@@ -11,15 +13,22 @@ from src.schema.anthropic import MessagesRequest
 REDACTION_TOKEN = "[REDACTED]"
 LOG_ARRAY_LIMIT = 50
 
+logger = structlog.get_logger(__name__)
+
 
 @lru_cache(maxsize=1)
-def _get_presidio_engines():
+def _get_presidio_engines() -> Tuple[Optional[Any], Optional[Any]]:
     try:
         from presidio_analyzer import AnalyzerEngine
         from presidio_anonymizer import AnonymizerEngine
-    except Exception as exc:  # pragma: no cover - defensive fallback
-        raise RuntimeError("Presidio not available") from exc
-    return AnalyzerEngine(), AnonymizerEngine()
+    except BaseException as exc:  # pragma: no cover - defensive fallback
+        logger.warning("presidio_import_failed", error=str(exc))
+        return None, None
+    try:
+        return AnalyzerEngine(), AnonymizerEngine()
+    except BaseException as exc:  # pragma: no cover - defensive fallback
+        logger.warning("presidio_init_failed", error=str(exc))
+        return None, None
 
 
 def _redaction_mode(override: Optional[str] = None) -> str:
@@ -41,6 +50,8 @@ def redact_text(text: Any, mode: Optional[str] = None) -> Any:
 
     try:
         analyzer, anonymizer = _get_presidio_engines()
+        if analyzer is None or anonymizer is None:
+            return REDACTION_TOKEN
         results = analyzer.analyze(text=text, language="en")
         if not results:
             return text
@@ -54,7 +65,7 @@ def redact_text(text: Any, mode: Optional[str] = None) -> Any:
             },
         )
         return anonymized.text
-    except Exception:
+    except BaseException:
         return REDACTION_TOKEN
 
 

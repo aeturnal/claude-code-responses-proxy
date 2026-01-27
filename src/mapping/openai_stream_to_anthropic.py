@@ -24,6 +24,8 @@ class StreamState:
     tool_metadata_by_index: Dict[int, Dict[str, Any]] = field(default_factory=dict)
     tool_block_by_call_id: Dict[str, int] = field(default_factory=dict)
     completed_blocks: set[int] = field(default_factory=set)
+    completed_text_blocks: set[int] = field(default_factory=set)
+    started_tool_blocks: set[int] = field(default_factory=set)
 
     def allocate_block_index(self, key: Optional[Tuple[int, int, str]] = None) -> int:
         index = self.next_block_index
@@ -60,15 +62,18 @@ class StreamState:
         )
         self.tool_input_buffers.pop(index, None)
         if raw is None:
-            return None
-        if isinstance(raw, (dict, list)):
+            return {}
+        if isinstance(raw, dict):
             return raw
+        if isinstance(raw, list):
+            return {}
         if not isinstance(raw, str):
-            return raw
+            return {}
         try:
-            return json.loads(raw)
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
         except (TypeError, json.JSONDecodeError):
-            return raw
+            return {}
 
 
 def _extract_indices(event: Dict[str, Any]) -> Tuple[Optional[int], Optional[int]]:
@@ -196,6 +201,20 @@ def _extract_final_arguments(event: Dict[str, Any]) -> Optional[Any]:
     return None
 
 
+def _tool_meta_complete(meta: Dict[str, Any]) -> bool:
+    return isinstance(meta.get("id"), str) and isinstance(meta.get("name"), str)
+
+
+def _render_tool_input_json(raw: Any) -> str:
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, dict):
+        return json.dumps(raw, ensure_ascii=False)
+    return ""
+
+
 async def translate_openai_events(
     events: AsyncIterator[Dict[str, Any]],
 ) -> AsyncIterator[str]:
@@ -226,20 +245,26 @@ async def translate_openai_events(
             part = payload.get("part", {})
             if part.get("type") == "output_text":
                 key = _key_for_event(payload, "text")
-                index, _ = state.get_or_create_block_index(key)
-                yield format_sse(
-                    "content_block_start",
-                    {
-                        "type": "content_block_start",
-                        "index": index,
-                        "content_block": {"type": "text", "text": ""},
-                    },
-                )
+                index, created = state.get_or_create_block_index(key)
+                if created:
+                    yield format_sse(
+                        "content_block_start",
+                        {
+                            "type": "content_block_start",
+                            "index": index,
+                            "content_block": {"type": "text", "text": ""},
+                        },
+                    )
             continue
 
         if event_type == "response.output_text.delta":
-            delta = payload.get("delta", {})
-            text = delta.get("text") or payload.get("text") or ""
+            delta = payload.get("delta")
+            if isinstance(delta, str):
+                text = delta
+            elif isinstance(delta, dict):
+                text = delta.get("text") or payload.get("text") or ""
+            else:
+                text = payload.get("text") or ""
             key = _key_for_event(payload, "text")
             index, created = state.get_or_create_block_index(key)
             if created:
@@ -273,10 +298,12 @@ async def translate_openai_events(
             ):
                 key = _key_for_event(payload, "text")
                 index, _ = state.get_or_create_block_index(key)
-                yield format_sse(
-                    "content_block_stop",
-                    {"type": "content_block_stop", "index": index},
-                )
+                if index not in state.completed_text_blocks:
+                    state.completed_text_blocks.add(index)
+                    yield format_sse(
+                        "content_block_stop",
+                        {"type": "content_block_stop", "index": index},
+                    )
             continue
 
         if event_type == "response.output_item.added":
@@ -294,19 +321,21 @@ async def translate_openai_events(
                 if name and "name" not in meta:
                     meta["name"] = name
                 state.init_tool_input_buffer(index)
-                yield format_sse(
-                    "content_block_start",
-                    {
-                        "type": "content_block_start",
-                        "index": index,
-                        "content_block": {
-                            "type": "tool_use",
-                            "id": call_id,
-                            "name": name,
-                            "input": {},
+                if _tool_meta_complete(meta) and index not in state.started_tool_blocks:
+                    state.started_tool_blocks.add(index)
+                    yield format_sse(
+                        "content_block_start",
+                        {
+                            "type": "content_block_start",
+                            "index": index,
+                            "content_block": {
+                                "type": "tool_use",
+                                "id": meta.get("id"),
+                                "name": meta.get("name"),
+                                "input": {},
+                            },
                         },
-                    },
-                )
+                    )
             continue
 
         if event_type == "response.output_item.delta":
@@ -329,8 +358,10 @@ async def translate_openai_events(
                     if name and "name" not in meta:
                         meta["name"] = name
                 if created:
-                    meta = state.tool_metadata_by_index.get(index, {})
                     state.init_tool_input_buffer(index)
+                meta = state.tool_metadata_by_index.get(index, {})
+                if _tool_meta_complete(meta) and index not in state.started_tool_blocks:
+                    state.started_tool_blocks.add(index)
                     yield format_sse(
                         "content_block_start",
                         {
@@ -344,6 +375,19 @@ async def translate_openai_events(
                             },
                         },
                     )
+                    buffered = state.tool_input_buffers.get(index, "")
+                    if buffered:
+                        yield format_sse(
+                            "content_block_delta",
+                            {
+                                "type": "content_block_delta",
+                                "index": index,
+                                "delta": {
+                                    "type": "input_json_delta",
+                                    "partial_json": buffered,
+                                },
+                            },
+                        )
                 arguments = item.get("arguments")
                 partial_json = ""
                 if isinstance(arguments, str):
@@ -352,17 +396,18 @@ async def translate_openai_events(
                     partial_json = json.dumps(arguments, ensure_ascii=False)
                 if partial_json:
                     state.append_tool_input(index, partial_json)
-                    yield format_sse(
-                        "content_block_delta",
-                        {
-                            "type": "content_block_delta",
-                            "index": index,
-                            "delta": {
-                                "type": "input_json_delta",
-                                "partial_json": partial_json,
+                    if index in state.started_tool_blocks:
+                        yield format_sse(
+                            "content_block_delta",
+                            {
+                                "type": "content_block_delta",
+                                "index": index,
+                                "delta": {
+                                    "type": "input_json_delta",
+                                    "partial_json": partial_json,
+                                },
                             },
-                        },
-                    )
+                        )
             continue
 
         if event_type == "response.function_call_arguments.delta":
@@ -382,8 +427,10 @@ async def translate_openai_events(
                 if name and "name" not in meta:
                     meta["name"] = name
             if created:
-                meta = state.tool_metadata_by_index.get(index, {})
                 state.init_tool_input_buffer(index)
+            meta = state.tool_metadata_by_index.get(index, {})
+            if _tool_meta_complete(meta) and index not in state.started_tool_blocks:
+                state.started_tool_blocks.add(index)
                 yield format_sse(
                     "content_block_start",
                     {
@@ -397,16 +444,34 @@ async def translate_openai_events(
                         },
                     },
                 )
+                buffered = state.tool_input_buffers.get(index, "")
+                if buffered:
+                    yield format_sse(
+                        "content_block_delta",
+                        {
+                            "type": "content_block_delta",
+                            "index": index,
+                            "delta": {
+                                "type": "input_json_delta",
+                                "partial_json": buffered,
+                            },
+                        },
+                    )
             partial_json = _extract_partial_json(payload)
-            state.append_tool_input(index, partial_json)
-            yield format_sse(
-                "content_block_delta",
-                {
-                    "type": "content_block_delta",
-                    "index": index,
-                    "delta": {"type": "input_json_delta", "partial_json": partial_json},
-                },
-            )
+            if partial_json:
+                state.append_tool_input(index, partial_json)
+                if index in state.started_tool_blocks:
+                    yield format_sse(
+                        "content_block_delta",
+                        {
+                            "type": "content_block_delta",
+                            "index": index,
+                            "delta": {
+                                "type": "input_json_delta",
+                                "partial_json": partial_json,
+                            },
+                        },
+                    )
             continue
 
         if event_type == "response.function_call_arguments.done":
@@ -426,8 +491,19 @@ async def translate_openai_events(
                 if name and "name" not in meta:
                     meta["name"] = name
             if created:
-                meta = state.tool_metadata_by_index.get(index, {})
                 state.init_tool_input_buffer(index)
+            tool_meta = state.tool_metadata_by_index.get(index) or {}
+            if not _tool_meta_complete(tool_meta):
+                if call_id and "id" not in tool_meta:
+                    tool_meta["id"] = call_id
+                if "id" not in tool_meta:
+                    tool_meta["id"] = f"tool_call_{index}"
+                if name and "name" not in tool_meta:
+                    tool_meta["name"] = name
+                if "name" not in tool_meta:
+                    tool_meta["name"] = "unknown_tool"
+            if index not in state.started_tool_blocks:
+                state.started_tool_blocks.add(index)
                 yield format_sse(
                     "content_block_start",
                     {
@@ -435,28 +511,46 @@ async def translate_openai_events(
                         "index": index,
                         "content_block": {
                             "type": "tool_use",
-                            "id": meta.get("id"),
-                            "name": meta.get("name"),
+                            "id": tool_meta.get("id"),
+                            "name": tool_meta.get("name"),
                             "input": {},
                         },
                     },
                 )
-            tool_meta = state.tool_metadata_by_index.get(index) or {}
+                buffered = state.tool_input_buffers.get(index, "")
+                if buffered:
+                    yield format_sse(
+                        "content_block_delta",
+                        {
+                            "type": "content_block_delta",
+                            "index": index,
+                            "delta": {
+                                "type": "input_json_delta",
+                                "partial_json": buffered,
+                            },
+                        },
+                    )
             final_args = _extract_final_arguments(payload)
-            tool_input = state.finalize_tool_input(index, raw_override=final_args)
+            if index in state.started_tool_blocks:
+                rendered_final = _render_tool_input_json(final_args)
+                if rendered_final and not state.tool_input_buffers.get(index):
+                    state.append_tool_input(index, rendered_final)
+                    yield format_sse(
+                        "content_block_delta",
+                        {
+                            "type": "content_block_delta",
+                            "index": index,
+                            "delta": {
+                                "type": "input_json_delta",
+                                "partial_json": rendered_final,
+                            },
+                        },
+                    )
+            state.finalize_tool_input(index, raw_override=final_args)
             state.completed_blocks.add(index)
             yield format_sse(
                 "content_block_stop",
-                {
-                    "type": "content_block_stop",
-                    "index": index,
-                    "content_block": {
-                        "type": "tool_use",
-                        "id": tool_meta.get("id") or call_id,
-                        "name": tool_meta.get("name"),
-                        "input": tool_input,
-                    },
-                },
+                {"type": "content_block_stop", "index": index},
             )
             continue
 
@@ -488,8 +582,19 @@ async def translate_openai_events(
                     if name and "name" not in meta:
                         meta["name"] = name
                 if created:
-                    meta = state.tool_metadata_by_index.get(index, {})
                     state.init_tool_input_buffer(index)
+                tool_meta = state.tool_metadata_by_index.get(index) or {}
+                if not _tool_meta_complete(tool_meta):
+                    if call_id and "id" not in tool_meta:
+                        tool_meta["id"] = call_id
+                    if "id" not in tool_meta:
+                        tool_meta["id"] = f"tool_call_{index}"
+                    if name and "name" not in tool_meta:
+                        tool_meta["name"] = name
+                    if "name" not in tool_meta:
+                        tool_meta["name"] = "unknown_tool"
+                if index not in state.started_tool_blocks:
+                    state.started_tool_blocks.add(index)
                     yield format_sse(
                         "content_block_start",
                         {
@@ -497,32 +602,50 @@ async def translate_openai_events(
                             "index": index,
                             "content_block": {
                                 "type": "tool_use",
-                                "id": meta.get("id"),
-                                "name": meta.get("name"),
+                                "id": tool_meta.get("id"),
+                                "name": tool_meta.get("name"),
                                 "input": {},
                             },
                         },
                     )
-                tool_meta = state.tool_metadata_by_index.get(index) or {}
+                    buffered = state.tool_input_buffers.get(index, "")
+                    if buffered:
+                        yield format_sse(
+                            "content_block_delta",
+                            {
+                                "type": "content_block_delta",
+                                "index": index,
+                                "delta": {
+                                    "type": "input_json_delta",
+                                    "partial_json": buffered,
+                                },
+                            },
+                        )
                 final_args = None
                 if isinstance(item.get("arguments"), str):
                     final_args = item.get("arguments")
                 elif isinstance(item.get("arguments"), (dict, list)):
                     final_args = item.get("arguments")
-                tool_input = state.finalize_tool_input(index, raw_override=final_args)
+                if index in state.started_tool_blocks:
+                    rendered_final = _render_tool_input_json(final_args)
+                    if rendered_final and not state.tool_input_buffers.get(index):
+                        state.append_tool_input(index, rendered_final)
+                        yield format_sse(
+                            "content_block_delta",
+                            {
+                                "type": "content_block_delta",
+                                "index": index,
+                                "delta": {
+                                    "type": "input_json_delta",
+                                    "partial_json": rendered_final,
+                                },
+                            },
+                        )
+                state.finalize_tool_input(index, raw_override=final_args)
                 state.completed_blocks.add(index)
                 yield format_sse(
                     "content_block_stop",
-                    {
-                        "type": "content_block_stop",
-                        "index": index,
-                        "content_block": {
-                            "type": "tool_use",
-                            "id": tool_meta.get("id") or call_id,
-                            "name": tool_meta.get("name") or name,
-                            "input": tool_input,
-                        },
-                    },
+                    {"type": "content_block_stop", "index": index},
                 )
             continue
 

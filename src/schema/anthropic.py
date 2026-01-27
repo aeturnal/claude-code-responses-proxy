@@ -69,6 +69,7 @@ class MessagesRequest(BaseModel):
     tools: Optional[List[ToolDefinition]] = None
     tool_choice: Optional[ToolChoice] = None
     max_tokens: Optional[int] = None
+    stream: Optional[bool] = None
 
 
 class CountTokensResponse(BaseModel):

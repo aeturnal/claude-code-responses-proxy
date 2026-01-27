@@ -9,11 +9,21 @@ from pathlib import Path
 
 import structlog
 
-from src.config import OBS_LOG_ENABLED, OBS_LOG_FILE, OBS_LOG_PRETTY
+from src.config import (
+    OBS_LOG_ENABLED,
+    OBS_LOG_FILE,
+    OBS_LOG_PRETTY,
+    OBS_STREAM_LOG_ENABLED,
+    OBS_STREAM_LOG_FILE,
+)
 
 
 def logging_enabled() -> bool:
     return OBS_LOG_ENABLED
+
+
+def streaming_logging_enabled() -> bool:
+    return OBS_STREAM_LOG_ENABLED
 
 
 def _build_renderer() -> structlog.processors.JSONRenderer:
@@ -22,18 +32,24 @@ def _build_renderer() -> structlog.processors.JSONRenderer:
     return structlog.processors.JSONRenderer()
 
 
-def _configure_stdlib_logging() -> None:
-    renderer = _build_renderer()
+def _build_formatter(
+    renderer: structlog.processors.JSONRenderer,
+) -> structlog.stdlib.ProcessorFormatter:
     pre_chain = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso"),
     ]
-    formatter = structlog.stdlib.ProcessorFormatter(
+    return structlog.stdlib.ProcessorFormatter(
         processor=renderer,
         foreign_pre_chain=pre_chain,
     )
+
+
+def _configure_stdlib_logging() -> None:
+    renderer = _build_renderer()
+    formatter = _build_formatter(renderer)
 
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
@@ -58,11 +74,34 @@ def _configure_stdlib_logging() -> None:
     root_logger.addHandler(file_handler)
 
 
-def configure_logging() -> None:
-    if not logging_enabled():
+def _configure_streaming_logging() -> None:
+    if not streaming_logging_enabled():
         return
 
-    _configure_stdlib_logging()
+    renderer = _build_renderer()
+    formatter = _build_formatter(renderer)
+
+    file_path = Path(OBS_STREAM_LOG_FILE)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_handler = logging.FileHandler(file_path)
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(formatter)
+
+    streaming_logger = logging.getLogger("streaming")
+    streaming_logger.setLevel(logging.INFO)
+    streaming_logger.handlers.clear()
+    streaming_logger.addHandler(file_handler)
+    streaming_logger.propagate = False
+
+
+def configure_logging() -> None:
+    if not logging_enabled() and not streaming_logging_enabled():
+        return
+
+    if logging_enabled():
+        _configure_stdlib_logging()
+    if streaming_logging_enabled():
+        _configure_streaming_logging()
 
     structlog.configure(
         processors=[
@@ -79,3 +118,7 @@ def configure_logging() -> None:
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
+
+
+def get_stream_logger() -> structlog.stdlib.BoundLogger:
+    return structlog.get_logger("streaming")
