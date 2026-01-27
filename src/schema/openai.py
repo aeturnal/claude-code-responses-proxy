@@ -22,6 +22,23 @@ class InputMessageItem(BaseModel):
     content: List[InputTextItem]
 
 
+class FunctionCallItem(BaseModel):
+    """OpenAI Responses function call input item."""
+
+    type: Literal["function_call"] = "function_call"
+    call_id: str
+    name: str
+    arguments: str
+
+
+class FunctionCallOutputItem(BaseModel):
+    """OpenAI Responses function call output input item."""
+
+    type: Literal["function_call_output"] = "function_call_output"
+    call_id: str
+    output: str
+
+
 class FunctionTool(BaseModel):
     """OpenAI Responses function tool definition."""
 
@@ -32,6 +49,31 @@ class FunctionTool(BaseModel):
     strict: bool = False
 
 
+class WebSearchToolFilters(BaseModel):
+    """OpenAI web search tool filters."""
+
+    allowed_domains: Optional[List[str]] = None
+
+
+class WebSearchToolUserLocation(BaseModel):
+    """OpenAI web search user location."""
+
+    type: Literal["approximate"] = "approximate"
+    country: Optional[str] = None
+    city: Optional[str] = None
+    region: Optional[str] = None
+    timezone: Optional[str] = None
+
+
+class WebSearchTool(BaseModel):
+    """OpenAI Responses web search tool definition."""
+
+    type: Literal["web_search"] = "web_search"
+    filters: Optional[WebSearchToolFilters] = None
+    user_location: Optional[WebSearchToolUserLocation] = None
+    external_web_access: Optional[bool] = None
+
+
 class ToolChoiceFunction(BaseModel):
     """Tool choice specifying a function."""
 
@@ -39,15 +81,27 @@ class ToolChoiceFunction(BaseModel):
     name: str
 
 
-ToolChoice = Union[Literal["auto", "none"], ToolChoiceFunction]
+class ToolChoiceWebSearch(BaseModel):
+    """Tool choice specifying web search."""
+
+    type: Literal["web_search"] = "web_search"
+
+
+ToolChoice = Union[Literal["auto", "none"], ToolChoiceFunction, ToolChoiceWebSearch]
+
+InputItem = Union[InputMessageItem, FunctionCallItem, FunctionCallOutputItem]
+
+ResponseTool = Union[FunctionTool, WebSearchTool]
 
 
 class OpenAIResponsesRequest(BaseModel):
     """OpenAI Responses API request model."""
 
     model: str
-    input: List[InputMessageItem]
+    input: List[InputItem]
     instructions: Optional[str] = None
-    tools: Optional[List[FunctionTool]] = None
+    tools: Optional[List[ResponseTool]] = None
     tool_choice: Optional[ToolChoice] = None
     max_output_tokens: Optional[int] = None
+    max_tool_calls: Optional[int] = None
+    include: Optional[List[str]] = None

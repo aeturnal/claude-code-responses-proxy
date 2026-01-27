@@ -189,3 +189,32 @@ def test_tool_call_waits_for_name_and_skips_empty_delta() -> None:
         payload for event, payload in parsed if event == "content_block_stop"
     )
     assert tool_stop == {"type": "content_block_stop", "index": tool_stop["index"]}
+
+
+def test_tool_call_sets_stop_reason_without_output() -> None:
+    events = [
+        {
+            "event": "response.function_call_arguments.delta",
+            "data": {
+                "type": "response.function_call_arguments.delta",
+                "item_id": "call_9",
+                "output_index": 0,
+                "delta": '{"query":"latest news"}',
+                "sequence_number": 1,
+            },
+        },
+        {
+            "event": "response.completed",
+            "data": {
+                "type": "response.completed",
+                "response": {"status": "completed", "output": []},
+            },
+        },
+    ]
+
+    parsed = _collect_sse(events)
+    message_delta = next(
+        payload for event, payload in parsed if event == "message_delta"
+    )
+
+    assert message_delta["delta"]["stop_reason"] == "tool_use"

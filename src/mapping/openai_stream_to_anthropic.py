@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Dict, Optional, Tuple, cast
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple, cast
 
 from .openai_to_anthropic import derive_stop_reason, normalize_openai_usage
 
@@ -26,6 +26,10 @@ class StreamState:
     completed_blocks: set[int] = field(default_factory=set)
     completed_text_blocks: set[int] = field(default_factory=set)
     started_tool_blocks: set[int] = field(default_factory=set)
+    saw_tool_call: bool = False
+    web_search_calls: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    web_search_result_emitted: set[str] = field(default_factory=set)
+    web_search_use_emitted: set[str] = field(default_factory=set)
 
     def allocate_block_index(self, key: Optional[Tuple[int, int, str]] = None) -> int:
         index = self.next_block_index
@@ -215,6 +219,42 @@ def _render_tool_input_json(raw: Any) -> str:
     return ""
 
 
+def _web_search_input_from_action(action: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(action, dict):
+        return {}
+    query = action.get("query")
+    if isinstance(query, str):
+        return {"query": query}
+    queries = action.get("queries")
+    if isinstance(queries, list) and queries:
+        first = queries[0]
+        if isinstance(first, str):
+            return {"query": first}
+    return {}
+
+
+def _web_search_results_from_action(action: Dict[str, Any]) -> List[Dict[str, Any]]:
+    sources = action.get("sources") if isinstance(action, dict) else None
+    if not isinstance(sources, list):
+        return []
+    results: List[Dict[str, Any]] = []
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        url = source.get("url")
+        if not isinstance(url, str):
+            continue
+        result: Dict[str, Any] = {"type": "web_search_result", "url": url}
+        title = source.get("title")
+        if isinstance(title, str):
+            result["title"] = title
+        page_age = source.get("page_age")
+        if isinstance(page_age, str):
+            result["page_age"] = page_age
+        results.append(result)
+    return results
+
+
 async def translate_openai_events(
     events: AsyncIterator[Dict[str, Any]],
 ) -> AsyncIterator[str]:
@@ -308,7 +348,62 @@ async def translate_openai_events(
 
         if event_type == "response.output_item.added":
             item = payload.get("item", {})
+            if item.get("type") == "web_search_call":
+                call_id = item.get("id") if isinstance(item.get("id"), str) else None
+                if call_id:
+                    action = item.get("action")
+                    if isinstance(action, dict):
+                        state.web_search_calls[call_id] = action
+                    if call_id not in state.web_search_use_emitted:
+                        key = _key_for_event(payload, "web_search_use")
+                        index = state.allocate_block_index(key)
+                        state.web_search_use_emitted.add(call_id)
+                        yield format_sse(
+                            "content_block_start",
+                            {
+                                "type": "content_block_start",
+                                "index": index,
+                                "content_block": {
+                                    "type": "server_tool_use",
+                                    "id": call_id,
+                                    "name": "web_search",
+                                    "input": _web_search_input_from_action(
+                                        state.web_search_calls.get(call_id, {})
+                                    ),
+                                },
+                            },
+                        )
+                        yield format_sse(
+                            "content_block_stop",
+                            {"type": "content_block_stop", "index": index},
+                        )
+                    if call_id not in state.web_search_result_emitted:
+                        results = _web_search_results_from_action(
+                            state.web_search_calls.get(call_id, {})
+                        )
+                        if results:
+                            key = _key_for_event(payload, "web_search_result")
+                            index = state.allocate_block_index(key)
+                            state.web_search_result_emitted.add(call_id)
+                            yield format_sse(
+                                "content_block_start",
+                                {
+                                    "type": "content_block_start",
+                                    "index": index,
+                                    "content_block": {
+                                        "type": "web_search_tool_result",
+                                        "tool_use_id": call_id,
+                                        "content": results,
+                                    },
+                                },
+                            )
+                            yield format_sse(
+                                "content_block_stop",
+                                {"type": "content_block_stop", "index": index},
+                            )
+                continue
             if item.get("type") == "function_call":
+                state.saw_tool_call = True
                 key = _key_for_event(payload, "tool_use")
                 index, _ = state.get_or_create_block_index(key)
                 call_id = item.get("call_id") or item.get("id")
@@ -340,7 +435,62 @@ async def translate_openai_events(
 
         if event_type == "response.output_item.delta":
             item = payload.get("item", {})
+            if item.get("type") == "web_search_call":
+                call_id = item.get("id") if isinstance(item.get("id"), str) else None
+                if call_id:
+                    action = item.get("action")
+                    if isinstance(action, dict):
+                        state.web_search_calls[call_id] = action
+                    if call_id not in state.web_search_use_emitted:
+                        key = _key_for_event(payload, "web_search_use")
+                        index = state.allocate_block_index(key)
+                        state.web_search_use_emitted.add(call_id)
+                        yield format_sse(
+                            "content_block_start",
+                            {
+                                "type": "content_block_start",
+                                "index": index,
+                                "content_block": {
+                                    "type": "server_tool_use",
+                                    "id": call_id,
+                                    "name": "web_search",
+                                    "input": _web_search_input_from_action(
+                                        state.web_search_calls.get(call_id, {})
+                                    ),
+                                },
+                            },
+                        )
+                        yield format_sse(
+                            "content_block_stop",
+                            {"type": "content_block_stop", "index": index},
+                        )
+                    if call_id not in state.web_search_result_emitted:
+                        results = _web_search_results_from_action(
+                            state.web_search_calls.get(call_id, {})
+                        )
+                        if results:
+                            key = _key_for_event(payload, "web_search_result")
+                            index = state.allocate_block_index(key)
+                            state.web_search_result_emitted.add(call_id)
+                            yield format_sse(
+                                "content_block_start",
+                                {
+                                    "type": "content_block_start",
+                                    "index": index,
+                                    "content_block": {
+                                        "type": "web_search_tool_result",
+                                        "tool_use_id": call_id,
+                                        "content": results,
+                                    },
+                                },
+                            )
+                            yield format_sse(
+                                "content_block_stop",
+                                {"type": "content_block_stop", "index": index},
+                            )
+                continue
             if item.get("type") == "function_call":
+                state.saw_tool_call = True
                 key = _key_for_event(payload, "tool_use")
                 call_id = item.get("call_id") or item.get("id")
                 name = item.get("name")
@@ -412,6 +562,7 @@ async def translate_openai_events(
 
         if event_type == "response.function_call_arguments.delta":
             call_id, name = _extract_tool_metadata(payload)
+            state.saw_tool_call = True
             key = _key_for_event(payload, "tool_use")
             index = state.tool_block_by_call_id.get(call_id) if call_id else None
             if index is None:
@@ -476,6 +627,7 @@ async def translate_openai_events(
 
         if event_type == "response.function_call_arguments.done":
             call_id, name = _extract_tool_metadata(payload)
+            state.saw_tool_call = True
             key = _key_for_event(payload, "tool_use")
             index = state.tool_block_by_call_id.get(call_id) if call_id else None
             if index is None:
@@ -556,7 +708,62 @@ async def translate_openai_events(
 
         if event_type == "response.output_item.done":
             item = payload.get("item", {})
+            if item.get("type") == "web_search_call":
+                call_id = item.get("id") if isinstance(item.get("id"), str) else None
+                if call_id:
+                    action = item.get("action")
+                    if isinstance(action, dict):
+                        state.web_search_calls[call_id] = action
+                    if call_id not in state.web_search_use_emitted:
+                        key = _key_for_event(payload, "web_search_use")
+                        index = state.allocate_block_index(key)
+                        state.web_search_use_emitted.add(call_id)
+                        yield format_sse(
+                            "content_block_start",
+                            {
+                                "type": "content_block_start",
+                                "index": index,
+                                "content_block": {
+                                    "type": "server_tool_use",
+                                    "id": call_id,
+                                    "name": "web_search",
+                                    "input": _web_search_input_from_action(
+                                        state.web_search_calls.get(call_id, {})
+                                    ),
+                                },
+                            },
+                        )
+                        yield format_sse(
+                            "content_block_stop",
+                            {"type": "content_block_stop", "index": index},
+                        )
+                    if call_id not in state.web_search_result_emitted:
+                        results = _web_search_results_from_action(
+                            state.web_search_calls.get(call_id, {})
+                        )
+                        if results:
+                            key = _key_for_event(payload, "web_search_result")
+                            index = state.allocate_block_index(key)
+                            state.web_search_result_emitted.add(call_id)
+                            yield format_sse(
+                                "content_block_start",
+                                {
+                                    "type": "content_block_start",
+                                    "index": index,
+                                    "content_block": {
+                                        "type": "web_search_tool_result",
+                                        "tool_use_id": call_id,
+                                        "content": results,
+                                    },
+                                },
+                            )
+                            yield format_sse(
+                                "content_block_stop",
+                                {"type": "content_block_stop", "index": index},
+                            )
+                continue
             if item.get("type") == "function_call":
+                state.saw_tool_call = True
                 call_id = (
                     item.get("call_id")
                     if isinstance(item.get("call_id"), str)
@@ -651,7 +858,50 @@ async def translate_openai_events(
 
         if event_type == "response.completed":
             response = _response_from_event(payload) or payload
+            for call_id, action in list(state.web_search_calls.items()):
+                if call_id not in state.web_search_use_emitted:
+                    index = state.allocate_block_index()
+                    state.web_search_use_emitted.add(call_id)
+                    yield format_sse(
+                        "content_block_start",
+                        {
+                            "type": "content_block_start",
+                            "index": index,
+                            "content_block": {
+                                "type": "server_tool_use",
+                                "id": call_id,
+                                "name": "web_search",
+                                "input": _web_search_input_from_action(action),
+                            },
+                        },
+                    )
+                    yield format_sse(
+                        "content_block_stop",
+                        {"type": "content_block_stop", "index": index},
+                    )
+                if call_id not in state.web_search_result_emitted:
+                    results = _web_search_results_from_action(action)
+                    index = state.allocate_block_index()
+                    state.web_search_result_emitted.add(call_id)
+                    yield format_sse(
+                        "content_block_start",
+                        {
+                            "type": "content_block_start",
+                            "index": index,
+                            "content_block": {
+                                "type": "web_search_tool_result",
+                                "tool_use_id": call_id,
+                                "content": results,
+                            },
+                        },
+                    )
+                    yield format_sse(
+                        "content_block_stop",
+                        {"type": "content_block_stop", "index": index},
+                    )
             stop_reason = derive_stop_reason(response)
+            if stop_reason == "end_turn" and state.saw_tool_call:
+                stop_reason = "tool_use"
             usage = response.get("usage") or payload.get("usage")
             normalized_usage = normalize_openai_usage(
                 usage if isinstance(usage, dict) else None

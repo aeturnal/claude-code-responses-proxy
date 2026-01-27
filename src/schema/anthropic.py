@@ -12,6 +12,7 @@ class TextBlock(BaseModel):
 
     type: Literal["text"] = "text"
     text: str
+    citations: Optional[List[Dict[str, Any]]] = None
 
 
 class ToolResultBlock(BaseModel):
@@ -32,7 +33,40 @@ class ToolUseBlock(BaseModel):
     cache_control: Optional[Dict[str, Any]] = None
 
 
-ContentBlock = Union[TextBlock, ToolResultBlock, ToolUseBlock]
+class ServerToolUseBlock(BaseModel):
+    """Anthropic server tool use content block."""
+
+    type: Literal["server_tool_use"] = "server_tool_use"
+    id: str
+    name: str
+    input: Dict[str, Any]
+
+
+class WebSearchResult(BaseModel):
+    """Anthropic web search result item."""
+
+    type: Literal["web_search_result"] = "web_search_result"
+    url: str
+    title: Optional[str] = None
+    encrypted_content: Optional[str] = None
+    page_age: Optional[str] = None
+
+
+class WebSearchToolResultBlock(BaseModel):
+    """Anthropic web search tool result content block."""
+
+    type: Literal["web_search_tool_result"] = "web_search_tool_result"
+    tool_use_id: str
+    content: Union[List[WebSearchResult], Dict[str, Any]]
+
+
+ContentBlock = Union[
+    TextBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+    ServerToolUseBlock,
+    WebSearchToolResultBlock,
+]
 
 
 class Message(BaseModel):
@@ -45,9 +79,16 @@ class Message(BaseModel):
 class ToolDefinition(BaseModel):
     """Anthropic tool definition."""
 
+    type: Optional[str] = None
     name: str
     description: Optional[str] = None
+    input_schema: Optional[Dict[str, Any]] = None
     parameters: Dict[str, Any] = Field(default_factory=dict)
+    strict: Optional[bool] = None
+    max_uses: Optional[int] = None
+    allowed_domains: Optional[List[str]] = None
+    blocked_domains: Optional[List[str]] = None
+    user_location: Optional[Dict[str, Any]] = None
 
 
 class ToolChoiceSpecific(BaseModel):

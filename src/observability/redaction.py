@@ -235,6 +235,10 @@ def redact_messages_request(
                 updated["description"] = redact_text(updated.get("description"), mode)
             if "parameters" in updated:
                 updated["parameters"] = _redact_value(updated.get("parameters"), mode)
+            if "input_schema" in updated:
+                updated["input_schema"] = _redact_value(
+                    updated.get("input_schema"), mode
+                )
             updated_tools.append(updated)
         redacted["tools"] = updated_tools
 

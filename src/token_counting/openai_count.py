@@ -84,7 +84,18 @@ def _normalize_message_item(message: Any) -> Dict[str, str]:
 
 
 def _normalize_messages(input_items: Iterable[Any]) -> List[Dict[str, str]]:
-    return [_normalize_message_item(item) for item in input_items]
+    normalized: List[Dict[str, str]] = []
+    for item in input_items:
+        if isinstance(item, InputMessageItem):
+            normalized.append(_normalize_message_item(item))
+            continue
+        if isinstance(item, dict):
+            if item.get("type") == "message" or "role" in item:
+                normalized.append(_normalize_message_item(item))
+            continue
+        if getattr(item, "type", None) == "message":
+            normalized.append(_normalize_message_item(item))
+    return normalized
 
 
 def count_message_tokens(messages: List[Dict[str, str]], model: str) -> int:

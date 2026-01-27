@@ -22,6 +22,60 @@ def _parse_tool_input(arguments: Any) -> Any:
         return {}
 
 
+def _web_search_sources_to_results(action: Dict[str, Any]) -> List[Dict[str, Any]]:
+    sources = action.get("sources")
+    if not isinstance(sources, list):
+        return []
+    results: List[Dict[str, Any]] = []
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        url = source.get("url")
+        if not isinstance(url, str):
+            continue
+        result: Dict[str, Any] = {"type": "web_search_result", "url": url}
+        title = source.get("title")
+        if isinstance(title, str):
+            result["title"] = title
+        page_age = source.get("page_age")
+        if isinstance(page_age, str):
+            result["page_age"] = page_age
+        results.append(result)
+    return results
+
+
+def _citations_from_annotations(
+    text: str, annotations: List[Dict[str, Any]]
+) -> Optional[List[Dict[str, Any]]]:
+    if not annotations:
+        return None
+    citations: List[Dict[str, Any]] = []
+    for annotation in annotations:
+        if annotation.get("type") != "url_citation":
+            continue
+        url = annotation.get("url")
+        if not isinstance(url, str):
+            continue
+        citation: Dict[str, Any] = {
+            "type": "web_search_result_location",
+            "url": url,
+        }
+        title = annotation.get("title")
+        if isinstance(title, str):
+            citation["title"] = title
+        start = annotation.get("start_index")
+        end = annotation.get("end_index")
+        if (
+            isinstance(start, int)
+            and isinstance(end, int)
+            and start >= 0
+            and end > start
+        ):
+            citation["cited_text"] = text[start:end]
+        citations.append(citation)
+    return citations or None
+
+
 def derive_stop_reason(response: Dict[str, Any]) -> str:
     """Derive Anthropic stop_reason from OpenAI Responses payload."""
 
@@ -72,15 +126,43 @@ def map_openai_response_to_anthropic(response: Dict[str, Any]) -> Dict[str, Any]
     content_blocks: List[Dict[str, Any]] = []
     for item in response.get("output", []):
         item_type = item.get("type")
+        if item_type == "web_search_call":
+            call_id = item.get("id")
+            if isinstance(call_id, str):
+                content_blocks.append(
+                    {
+                        "type": "server_tool_use",
+                        "id": call_id,
+                        "name": "web_search",
+                        "input": {},
+                    }
+                )
+                action = item.get("action")
+                if isinstance(action, dict):
+                    results = _web_search_sources_to_results(action)
+                    content_blocks.append(
+                        {
+                            "type": "web_search_tool_result",
+                            "tool_use_id": call_id,
+                            "content": results,
+                        }
+                    )
+            continue
         if item_type == "message":
             for content_item in item.get("content", []):
                 if content_item.get("type") == "output_text":
-                    content_blocks.append(
-                        {
-                            "type": "text",
-                            "text": content_item.get("text", ""),
-                        }
-                    )
+                    text = content_item.get("text", "")
+                    annotations = content_item.get("annotations")
+                    citations = None
+                    if isinstance(annotations, list):
+                        citations = _citations_from_annotations(text, annotations)
+                    block: Dict[str, Any] = {
+                        "type": "text",
+                        "text": text,
+                    }
+                    if citations:
+                        block["citations"] = citations
+                    content_blocks.append(block)
             continue
         if item_type == "function_call":
             content_blocks.append(
