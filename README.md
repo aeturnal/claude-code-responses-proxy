@@ -177,7 +177,7 @@ Run a single test:
 pytest -q tests/test_token_counting.py::test_counts_basic_message
 ```
 
-Run a quick syntax check:
+Quick syntax sanity check:
 
 ```bash
 python -m compileall src tests
@@ -197,3 +197,41 @@ By default it expects the proxy at `http://localhost:8000`. Override with:
 ```bash
 PROXY_BASE=http://localhost:8000 OPENAI_API_KEY=... python scripts/verify_count_tokens.py
 ```
+
+## How it works (architecture)
+
+At a high level, the service is an adapter layer:
+
+1. **FastAPI app wiring**: `src/app.py` configures logging and middleware and
+   registers the API routers.
+2. **HTTP handlers**: `src/handlers/messages.py` implements `/v1/messages` and
+   `/v1/messages/stream`; `src/handlers/count_tokens.py` implements token count
+   endpoints.
+3. **Mapping (Anthropic → OpenAI)**: `src/mapping/anthropic_to_openai.py` builds
+   an OpenAI Responses request from an Anthropic Messages payload (messages,
+   tools/tool_choice, etc.).
+4. **Transport**: `src/transport/openai_client.py` posts to OpenAI
+   `{OPENAI_BASE_URL}/responses` using `OPENAI_API_KEY`.
+5. **Mapping (OpenAI → Anthropic)**: `src/mapping/openai_to_anthropic.py`
+   converts OpenAI `output` items into an Anthropic-compatible envelope
+   (`content`, `stop_reason`, `usage`).
+
+### Streaming (SSE)
+
+Streaming is implemented as translated server-sent events:
+
+- Upstream stream reader: `src/transport/openai_stream.py` reads OpenAI SSE
+  frames.
+- Translator: `src/mapping/openai_stream_to_anthropic.py` converts OpenAI stream
+  events into Anthropic-style SSE events (`message_start`, `message_delta`,
+  `message_end`, etc.).
+- On streaming failures, the server emits `event: error` containing an Anthropic
+  error envelope as the `data:` payload.
+
+### Observability and redaction
+
+- Logging is `structlog`-based (`src/observability/logging.py`) and is off by
+  default.
+- Redaction helpers live in `src/observability/redaction.py`. When
+  `OBS_REDACTION_MODE=partial`, redaction uses Presidio; if Presidio is
+  unavailable or errors, the implementation falls back to full redaction.
