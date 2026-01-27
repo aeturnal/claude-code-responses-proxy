@@ -9,6 +9,7 @@ from src.config import OBS_REDACTION_MODE
 from src.schema.anthropic import MessagesRequest
 
 REDACTION_TOKEN = "[REDACTED]"
+LOG_ARRAY_LIMIT = 50
 
 
 @lru_cache(maxsize=1)
@@ -47,7 +48,7 @@ def redact_text(text: Any, mode: Optional[str] = None) -> Any:
 
         anonymized = anonymizer.anonymize(
             text=text,
-            analyzer_results=results,
+            analyzer_results=results,  # type: ignore[arg-type]
             operators={
                 "DEFAULT": OperatorConfig("replace", {"new_value": REDACTION_TOKEN})
             },
@@ -75,11 +76,21 @@ def _redact_value(value: Any, mode: Optional[str]) -> Any:
     return value
 
 
+def _truncate_list(items: List[Any], limit: int) -> tuple[List[Any], bool]:
+    if limit <= 0:
+        return [], bool(items)
+    if len(items) <= limit:
+        return items, False
+    return items[:limit], True
+
+
 def _redact_text_blocks(
-    blocks: Iterable[Dict[str, Any]], mode: Optional[str]
-) -> List[Dict[str, Any]]:
+    blocks: Iterable[Dict[str, Any]], mode: Optional[str], limit: int
+) -> tuple[List[Dict[str, Any]], bool]:
+    block_list = list(blocks)
+    block_list, truncated = _truncate_list(block_list, limit)
     redacted: List[Dict[str, Any]] = []
-    for block in blocks:
+    for block in block_list:
         if not isinstance(block, dict):
             redacted.append(block)
             continue
@@ -92,7 +103,11 @@ def _redact_text_blocks(
             updated = dict(block)
             content = block.get("content")
             if isinstance(content, list):
-                updated["content"] = _redact_text_blocks(content, mode)
+                redacted_content, content_truncated = _redact_text_blocks(
+                    content, mode, limit
+                )
+                updated["content"] = redacted_content
+                truncated = truncated or content_truncated
             elif isinstance(content, str):
                 updated["content"] = redact_text(content, mode)
             redacted.append(updated)
@@ -104,7 +119,50 @@ def _redact_text_blocks(
             redacted.append(updated)
             continue
         redacted.append(block)
-    return redacted
+    return redacted, truncated
+
+
+def summarize_messages_request(
+    payload: Union[MessagesRequest, Dict[str, Any]],
+) -> Dict[str, Any]:
+    data = _normalize_payload(payload)
+    if not isinstance(data, dict):
+        return {}
+
+    messages = data.get("messages")
+    tools = data.get("tools")
+    message_count = len(messages) if isinstance(messages, list) else 0
+    tool_definition_count = len(tools) if isinstance(tools, list) else 0
+    tool_use_count = 0
+    tool_result_count = 0
+    tool_name_counts: Dict[str, int] = {}
+
+    if isinstance(messages, list):
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            content = message.get("content")
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                block_type = block.get("type")
+                if block_type == "tool_use":
+                    tool_use_count += 1
+                    name = block.get("name")
+                    if isinstance(name, str) and name:
+                        tool_name_counts[name] = tool_name_counts.get(name, 0) + 1
+                elif block_type == "tool_result":
+                    tool_result_count += 1
+
+    return {
+        "message_count": message_count,
+        "tool_definition_count": tool_definition_count,
+        "tool_use_count": tool_use_count,
+        "tool_result_count": tool_result_count,
+        "tool_name_counts": tool_name_counts,
+    }
 
 
 def redact_messages_request(
@@ -116,15 +174,22 @@ def redact_messages_request(
 
     mode = _redaction_mode(None)
     redacted = dict(data)
+    truncated = False
 
     system = data.get("system")
     if isinstance(system, list):
-        redacted["system"] = _redact_text_blocks(system, mode)
+        redacted_system, system_truncated = _redact_text_blocks(
+            system, mode, LOG_ARRAY_LIMIT
+        )
+        redacted["system"] = redacted_system
+        truncated = truncated or system_truncated
     elif system is not None:
         redacted["system"] = redact_text(system, mode)
 
     messages = data.get("messages")
     if isinstance(messages, list):
+        messages, messages_truncated = _truncate_list(messages, LOG_ARRAY_LIMIT)
+        truncated = truncated or messages_truncated
         updated_messages = []
         for message in messages:
             if not isinstance(message, dict):
@@ -133,7 +198,11 @@ def redact_messages_request(
             updated = dict(message)
             content = message.get("content")
             if isinstance(content, list):
-                updated["content"] = _redact_text_blocks(content, mode)
+                redacted_content, content_truncated = _redact_text_blocks(
+                    content, mode, LOG_ARRAY_LIMIT
+                )
+                updated["content"] = redacted_content
+                truncated = truncated or content_truncated
             elif content is not None:
                 updated["content"] = redact_text(content, mode)
             updated_messages.append(updated)
@@ -141,6 +210,8 @@ def redact_messages_request(
 
     tools = data.get("tools")
     if isinstance(tools, list):
+        tools, tools_truncated = _truncate_list(tools, LOG_ARRAY_LIMIT)
+        truncated = truncated or tools_truncated
         updated_tools = []
         for tool in tools:
             if not isinstance(tool, dict):
@@ -164,6 +235,9 @@ def redact_messages_request(
         if "input" in updated_choice:
             updated_choice["input"] = _redact_value(updated_choice.get("input"), mode)
         redacted["tool_choice"] = updated_choice
+
+    if truncated:
+        redacted["payload_truncated"] = True
 
     return redacted
 

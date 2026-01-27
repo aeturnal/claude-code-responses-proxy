@@ -13,7 +13,11 @@ from src.config import resolve_openai_model
 from src.errors.anthropic_error import build_anthropic_error
 from src.mapping.anthropic_to_openai import map_anthropic_request_to_openai
 from src.observability.logging import logging_enabled
-from src.observability.redaction import redact_messages_request, redact_openai_error
+from src.observability.redaction import (
+    redact_messages_request,
+    redact_openai_error,
+    summarize_messages_request,
+)
 from src.schema.anthropic import CountTokensResponse, MessagesRequest
 from src.token_counting.openai_count import count_openai_request_tokens
 
@@ -52,6 +56,7 @@ async def count_tokens(http_request: Request, request: MessagesRequest):
             model_anthropic=model_anthropic,
             model_openai=model_openai,
             payload=redact_messages_request(request),
+            payload_summary=summarize_messages_request(request),
         )
 
     try:

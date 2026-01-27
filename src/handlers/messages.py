@@ -21,6 +21,7 @@ from src.observability.redaction import (
     redact_anthropic_response,
     redact_messages_request,
     redact_openai_error,
+    summarize_messages_request,
 )
 from src.schema.anthropic import MessagesRequest
 from src.transport.openai_client import OpenAIUpstreamError, create_openai_response
@@ -95,6 +96,17 @@ async def create_message(http_request: Request, request: MessagesRequest) -> Any
         model_openai = None
     correlation_id_value = _get_correlation_id(http_request)
     if logging_enabled():
+        payload_summary = summarize_messages_request(request)
+        tool_use_count = payload_summary.get("tool_use_count", 0)
+        if isinstance(tool_use_count, int) and tool_use_count >= 40:
+            logger.warning(
+                "tool_use_spike",
+                endpoint=str(http_request.url.path),
+                correlation_id=correlation_id_value,
+                model_anthropic=model_anthropic,
+                model_openai=model_openai,
+                payload_summary=payload_summary,
+            )
         logger.info(
             "request",
             endpoint=str(http_request.url.path),
@@ -103,6 +115,7 @@ async def create_message(http_request: Request, request: MessagesRequest) -> Any
             model_anthropic=model_anthropic,
             model_openai=model_openai,
             payload=redact_messages_request(request),
+            payload_summary=payload_summary,
         )
 
     openai_request = map_anthropic_request_to_openai(request)
@@ -183,6 +196,17 @@ async def stream_messages(
         model_openai = None
     correlation_id_value = _get_correlation_id(http_request)
     if logging_enabled():
+        payload_summary = summarize_messages_request(request)
+        tool_use_count = payload_summary.get("tool_use_count", 0)
+        if isinstance(tool_use_count, int) and tool_use_count >= 40:
+            logger.warning(
+                "tool_use_spike",
+                endpoint=str(http_request.url.path),
+                correlation_id=correlation_id_value,
+                model_anthropic=model_anthropic,
+                model_openai=model_openai,
+                payload_summary=payload_summary,
+            )
         logger.info(
             "request",
             endpoint=str(http_request.url.path),
@@ -191,6 +215,7 @@ async def stream_messages(
             model_anthropic=model_anthropic,
             model_openai=model_openai,
             payload=redact_messages_request(request),
+            payload_summary=payload_summary,
         )
 
     openai_request = map_anthropic_request_to_openai(request)
