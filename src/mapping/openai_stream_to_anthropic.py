@@ -112,18 +112,29 @@ def _key_for_event(event: Dict[str, Any], kind: str) -> Optional[Tuple[int, int,
     )
 
 
-def _build_message_start_payload(response: Dict[str, Any]) -> Dict[str, Any]:
+def _build_message_start_payload(
+    response: Dict[str, Any],
+    initial_usage: Optional[Dict[str, Any]] = None,
+    model_override: Optional[str] = None,
+) -> Dict[str, Any]:
+    usage_source = response.get("usage")
+    if not isinstance(usage_source, dict):
+        usage_source = initial_usage
     message: Dict[str, Any] = {
         "type": "message",
         "role": "assistant",
         "content": [],
         "stop_reason": None,
         "stop_sequence": None,
-        "usage": normalize_openai_usage(response.get("usage")),
+        "usage": normalize_openai_usage(
+            usage_source if isinstance(usage_source, dict) else None
+        ),
     }
     if response.get("id"):
         message["id"] = response["id"]
-    if response.get("model"):
+    if model_override:
+        message["model"] = model_override
+    elif response.get("model"):
         message["model"] = response["model"]
     return {"type": "message_start", "message": message}
 
@@ -257,6 +268,8 @@ def _web_search_results_from_action(action: Dict[str, Any]) -> List[Dict[str, An
 
 async def translate_openai_events(
     events: AsyncIterator[Dict[str, Any]],
+    initial_usage: Optional[Dict[str, Any]] = None,
+    model_override: Optional[str] = None,
 ) -> AsyncIterator[str]:
     state = StreamState()
 
@@ -273,7 +286,14 @@ async def translate_openai_events(
 
         if not state.message_started:
             response = _response_from_event(payload)
-            yield format_sse("message_start", _build_message_start_payload(response))
+            yield format_sse(
+                "message_start",
+                _build_message_start_payload(
+                    response,
+                    initial_usage=initial_usage,
+                    model_override=model_override,
+                ),
+            )
             state.message_started = True
             if event_type == "response.created":
                 continue
@@ -913,7 +933,13 @@ async def translate_openai_events(
                 "usage": normalized_usage,
             }
             yield format_sse("message_delta", payload)
-            yield format_sse("message_stop", {"type": "message_stop"})
+            yield format_sse(
+                "message_stop",
+                {
+                    "type": "message_stop",
+                    "usage": normalized_usage,
+                },
+            )
             continue
 
         # Unknown event types are ignored to keep stream resilient.

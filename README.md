@@ -70,6 +70,14 @@ Streaming via `/v1/messages` is supported by setting `"stream": true`.
 
 Streams Anthropic-compatible SSE events (text/event-stream).
 
+Notes for client UX:
+
+- `message_start` includes the Anthropic model name (not the OpenAI model), so
+  clients can map context windows correctly.
+- `message_start` also includes a locally computed `usage.input_tokens` value
+  to support prompt/context progress indicators before the OpenAI stream emits
+  final usage totals.
+
 ```bash
 curl -N http://localhost:8000/v1/messages/stream \
   -H 'Content-Type: application/json' \

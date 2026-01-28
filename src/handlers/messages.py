@@ -29,6 +29,7 @@ from src.observability.redaction import (
     summarize_messages_request,
 )
 from src.schema.anthropic import MessagesRequest
+from src.token_counting.openai_count import count_openai_request_tokens
 from src.transport.openai_client import OpenAIUpstreamError, create_openai_response
 from src.transport.openai_stream import stream_openai_events
 
@@ -250,6 +251,13 @@ async def stream_messages(
     openai_request = map_anthropic_request_to_openai(request)
     payload = _normalize_openai_payload(openai_request)
     payload["stream"] = True
+    initial_usage: Optional[Dict[str, Any]] = None
+    try:
+        input_tokens = count_openai_request_tokens(payload)
+    except ValueError:
+        input_tokens = None
+    if isinstance(input_tokens, int):
+        initial_usage = {"input_tokens": input_tokens, "output_tokens": 0}
 
     async def event_stream() -> AsyncIterator[str]:
         latest_usage: Optional[Dict[str, Any]] = None
@@ -272,7 +280,11 @@ async def stream_messages(
             )
         try:
             openai_events = stream_openai_events(payload)
-            async for sse_event in translate_openai_events(openai_events):
+            async for sse_event in translate_openai_events(
+                openai_events,
+                initial_usage=initial_usage,
+                model_override=model_anthropic,
+            ):
                 event_name, data = _parse_sse_payload(sse_event)
                 if first_event_at is None:
                     first_event_at = time.perf_counter()

@@ -109,13 +109,10 @@ def normalize_openai_usage(usage: Optional[Dict[str, Any]]) -> Dict[str, int]:
         cached_value = details.get("cached_tokens")
         if isinstance(cached_value, int):
             cached_tokens = cached_value
-    uncached_input_tokens = input_tokens - cached_tokens
-    if uncached_input_tokens < 0:
-        uncached_input_tokens = 0
     return {
         "cache_creation_input_tokens": 0,
         "cache_read_input_tokens": cached_tokens,
-        "input_tokens": uncached_input_tokens,
+        "input_tokens": input_tokens,
         "output_tokens": output_tokens,
     }
 
