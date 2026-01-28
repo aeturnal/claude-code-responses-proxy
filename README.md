@@ -39,6 +39,12 @@ python -m uvicorn src.app:app --reload
 
 The server will be available at `http://localhost:8000`.
 
+If you're using Claude Code (or any client that normally targets Anthropic), point it at this proxy:
+
+```bash
+export ANTHROPIC_BASE_URL=http://localhost:8000
+```
+
 ## Endpoints
 
 ### POST /v1/messages
@@ -125,6 +131,22 @@ Response:
 
 If `OPENAI_API_KEY` is missing, `/v1/messages` returns a 401 Anthropic error
 envelope, and streaming emits `event: error`.
+
+### Pointing Claude Code at the proxy
+
+Claude Code is an Anthropic client; to route its `/v1/messages` calls to this service, set:
+
+```bash
+ANTHROPIC_BASE_URL=http://localhost:8000
+```
+
+To force Claude Code to use a specific Anthropic model for subagents, set:
+
+```bash
+export CLAUDE_CODE_SUBAGENT_MODEL="claude-haiku-4-5"
+```
+
+When `ANTHROPIC_BASE_URL` points at this proxy, that subagent model name will be translated the same way as any other request model (via `MODEL_MAP_JSON`, falling back to `OPENAI_DEFAULT_MODEL`).
 
 ### Model mapping (MODEL_MAP_JSON)
 
