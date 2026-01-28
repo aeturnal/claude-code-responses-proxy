@@ -1,5 +1,11 @@
 __pycache__/
 **/__pycache__/
+.DS_Store
+.env
+.env.*
+.pytest_cache/
+.venv/
+.vscode/
 logs/
 AGENTS.md
 CLAUDE.md
