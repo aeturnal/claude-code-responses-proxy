@@ -10,6 +10,8 @@ from pathlib import Path
 import structlog
 
 from src.config import (
+    ANTHROPIC_TELEMETRY_LOG_ENABLED,
+    ANTHROPIC_TELEMETRY_LOG_FILE,
     OBS_LOG_ENABLED,
     OBS_LOG_FILE,
     OBS_LOG_PRETTY,
@@ -24,6 +26,10 @@ def logging_enabled() -> bool:
 
 def streaming_logging_enabled() -> bool:
     return OBS_STREAM_LOG_ENABLED
+
+
+def anthropic_telemetry_logging_enabled() -> bool:
+    return ANTHROPIC_TELEMETRY_LOG_ENABLED
 
 
 def _build_renderer() -> structlog.processors.JSONRenderer:
@@ -94,14 +100,37 @@ def _configure_streaming_logging() -> None:
     streaming_logger.propagate = False
 
 
-def configure_logging() -> None:
-    if not logging_enabled() and not streaming_logging_enabled():
-        return
+def _configure_anthropic_telemetry_logging(enable_file: bool) -> None:
+    renderer = _build_renderer()
+    formatter = _build_formatter(renderer)
 
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setLevel(logging.INFO)
+    stdout_handler.setFormatter(formatter)
+
+    file_handler = None
+    if enable_file:
+        file_path = Path(ANTHROPIC_TELEMETRY_LOG_FILE)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(file_path)
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(formatter)
+
+    telemetry_logger = logging.getLogger("anthropic_telemetry")
+    telemetry_logger.setLevel(logging.INFO)
+    telemetry_logger.handlers.clear()
+    telemetry_logger.addHandler(stdout_handler)
+    if file_handler is not None:
+        telemetry_logger.addHandler(file_handler)
+    telemetry_logger.propagate = False
+
+
+def configure_logging() -> None:
     if logging_enabled():
         _configure_stdlib_logging()
     if streaming_logging_enabled():
         _configure_streaming_logging()
+    _configure_anthropic_telemetry_logging(anthropic_telemetry_logging_enabled())
 
     structlog.configure(
         processors=[
@@ -122,3 +151,7 @@ def configure_logging() -> None:
 
 def get_stream_logger() -> structlog.stdlib.BoundLogger:
     return structlog.get_logger("streaming")
+
+
+def get_anthropic_telemetry_logger() -> structlog.stdlib.BoundLogger:
+    return structlog.get_logger("anthropic_telemetry")

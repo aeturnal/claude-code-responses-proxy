@@ -12,6 +12,21 @@ from src.schema.anthropic import MessagesRequest
 
 REDACTION_TOKEN = "[REDACTED]"
 LOG_ARRAY_LIMIT = 50
+SENSITIVE_KEYS = {
+    "api_key",
+    "apikey",
+    "authorization",
+    "bearer",
+    "cookie",
+    "email",
+    "jwt",
+    "password",
+    "phone",
+    "secret",
+    "session",
+    "set_cookie",
+    "token",
+}
 
 logger = structlog.get_logger(__name__)
 
@@ -93,6 +108,12 @@ def _truncate_list(items: List[Any], limit: int) -> tuple[List[Any], bool]:
     if len(items) <= limit:
         return items, False
     return items[:limit], True
+
+
+def _normalize_key(key: Any) -> Optional[str]:
+    if not isinstance(key, str):
+        return None
+    return key.strip().lower().replace("-", "_")
 
 
 def _redact_text_blocks(
@@ -254,6 +275,42 @@ def redact_messages_request(
     if truncated:
         redacted["payload_truncated"] = True
 
+    return redacted
+
+
+def _redact_generic_value(value: Any, mode: Optional[str]) -> tuple[Any, bool]:
+    truncated = False
+    if isinstance(value, str):
+        return redact_text(value, mode), False
+    if isinstance(value, list):
+        items, list_truncated = _truncate_list(value, LOG_ARRAY_LIMIT)
+        truncated = truncated or list_truncated
+        redacted_items = []
+        for item in items:
+            redacted_item, item_truncated = _redact_generic_value(item, mode)
+            truncated = truncated or item_truncated
+            redacted_items.append(redacted_item)
+        return redacted_items, truncated
+    if isinstance(value, dict):
+        redacted: Dict[str, Any] = {}
+        for key, item in value.items():
+            normalized_key = _normalize_key(key)
+            if normalized_key in SENSITIVE_KEYS:
+                redacted[key] = REDACTION_TOKEN
+                continue
+            redacted_item, item_truncated = _redact_generic_value(item, mode)
+            truncated = truncated or item_truncated
+            redacted[key] = redacted_item
+        return redacted, truncated
+    return value, False
+
+
+def redact_generic_payload(payload: Any) -> Any:
+    mode = _redaction_mode(None)
+    redacted, truncated = _redact_generic_value(payload, mode)
+    if truncated and isinstance(redacted, dict):
+        redacted = dict(redacted)
+        redacted["payload_truncated"] = True
     return redacted
 
 

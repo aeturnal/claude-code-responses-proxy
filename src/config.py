@@ -28,6 +28,10 @@ OBS_REDACTION_MODE = os.getenv("OBS_REDACTION_MODE", "full")
 OBS_LOG_PRETTY = _env_bool("OBS_LOG_PRETTY", True)
 OBS_STREAM_LOG_ENABLED = _env_bool("OBS_STREAM_LOG_ENABLED", OBS_LOG_ENABLED)
 OBS_STREAM_LOG_FILE = os.getenv("OBS_STREAM_LOG_FILE", "./logs/streaming.log")
+ANTHROPIC_TELEMETRY_LOG_ENABLED = _env_bool("ANTHROPIC_TELEMETRY_LOG_ENABLED", False)
+ANTHROPIC_TELEMETRY_LOG_FILE = os.getenv(
+    "ANTHROPIC_TELEMETRY_LOG_FILE", "./logs/anthropic_telemetry.log"
+)
 
 
 class MissingOpenAIAPIKeyError(ValueError):

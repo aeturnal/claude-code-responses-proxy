@@ -8,6 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from src.errors.anthropic_error import build_anthropic_error
+from src.handlers.anthropic_telemetry import router as anthropic_telemetry_router
 from src.handlers.count_tokens import router as count_tokens_router
 from src.handlers.messages import router as messages_router
 from src.middleware.observability import ObservabilityMiddleware
@@ -34,3 +35,4 @@ async def handle_validation_error(
 
 app.include_router(messages_router)
 app.include_router(count_tokens_router)
+app.include_router(anthropic_telemetry_router)
