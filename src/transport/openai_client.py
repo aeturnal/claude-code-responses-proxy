@@ -6,8 +6,16 @@ from typing import Any, Dict
 
 import httpx
 from asgi_correlation_id import correlation_id
+import structlog
 
 from src.config import OPENAI_BASE_URL, require_openai_api_key
+from src.transport.lmstudio import (
+    collapse_payload,
+    is_lmstudio_base_url,
+    normalize_payload,
+)
+
+logger = structlog.get_logger(__name__)
 
 
 class OpenAIUpstreamError(Exception):
@@ -39,6 +47,49 @@ async def create_openai_response(payload: Dict[str, Any]) -> Dict[str, Any]:
         response = await client.post(url, json=payload, headers=headers)
 
     if response.is_error:
-        raise OpenAIUpstreamError(response.status_code, _safe_json(response))
+        error_payload = _safe_json(response)
+        if response.status_code == 400 and _is_invalid_input_union(error_payload):
+            if is_lmstudio_base_url():
+                fallback_payload = normalize_payload(payload)
+                if fallback_payload != payload:
+                    logger.info(
+                        "lmstudio_payload_normalized",
+                        endpoint="/v1/responses",
+                    )
+                    response = await client.post(
+                        url, json=fallback_payload, headers=headers
+                    )
+                    if not response.is_error:
+                        return response.json()
+                    error_payload = _safe_json(response)
+                collapsed_payload = collapse_payload(payload)
+                if (
+                    collapsed_payload != payload
+                    and collapsed_payload != fallback_payload
+                ):
+                    logger.info(
+                        "lmstudio_payload_collapsed",
+                        endpoint="/v1/responses",
+                    )
+                    response = await client.post(
+                        url, json=collapsed_payload, headers=headers
+                    )
+                    if not response.is_error:
+                        return response.json()
+                    error_payload = _safe_json(response)
+        raise OpenAIUpstreamError(response.status_code, error_payload)
 
     return response.json()
+
+
+def _is_invalid_input_union(error_payload: Any) -> bool:
+    if not isinstance(error_payload, dict):
+        return False
+    error = error_payload.get("error")
+    if not isinstance(error, dict):
+        return False
+    if error.get("param") != "input":
+        return False
+    if error.get("code") != "invalid_union":
+        return False
+    return True

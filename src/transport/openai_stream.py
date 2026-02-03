@@ -11,6 +11,11 @@ from asgi_correlation_id import correlation_id
 from src.config import OPENAI_BASE_URL, require_openai_api_key
 from src.observability.logging import get_stream_logger, streaming_logging_enabled
 from src.transport.openai_client import OpenAIUpstreamError
+from src.transport.lmstudio import (
+    collapse_payload,
+    is_lmstudio_base_url,
+    normalize_payload,
+)
 
 
 def _safe_json(response: httpx.Response) -> Any:
@@ -56,12 +61,119 @@ async def stream_openai_events(
             correlation_id=upstream_correlation_id,
         )
 
+    async def _run_stream(
+        response: httpx.Response,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        nonlocal current_event, data_lines
+        async for line in response.aiter_lines():
+            if line == "":
+                if current_event is None and not data_lines:
+                    continue
+                event_name = current_event or "message"
+                yield {"event": event_name, "data": _parse_data(data_lines)}
+                current_event = None
+                data_lines = []
+                continue
+
+            if line.startswith(":"):
+                continue
+
+            if line.startswith("event:"):
+                current_event = line[len("event:") :].lstrip()
+                continue
+
+            if line.startswith("data:"):
+                data_lines.append(line[len("data:") :].lstrip())
+                continue
+
+        if current_event is not None or data_lines:
+            event_name = current_event or "message"
+            yield {"event": event_name, "data": _parse_data(data_lines)}
+
     async with httpx.AsyncClient(timeout=300.0) as client:
         async with client.stream(
             "POST", url, json=payload, headers=headers
         ) as response:
             if response.is_error:
                 await response.aread()
+                error_payload = _safe_json(response)
+                if (
+                    response.status_code == 400
+                    and _is_invalid_input_union(error_payload)
+                    and is_lmstudio_base_url()
+                ):
+                    fallback_payload = normalize_payload(payload)
+                    if fallback_payload != payload:
+                        if stream_logger:
+                            stream_logger.info(
+                                "lmstudio_payload_normalized",
+                                endpoint="/v1/messages/stream",
+                                upstream_url=url,
+                                correlation_id=upstream_correlation_id,
+                            )
+                        current_event = None
+                        data_lines = []
+                        async with client.stream(
+                            "POST", url, json=fallback_payload, headers=headers
+                        ) as fallback_response:
+                            if not fallback_response.is_error:
+                                if stream_logger:
+                                    stream_logger.info(
+                                        "upstream_connect_ok",
+                                        endpoint="/v1/messages/stream",
+                                        upstream_url=url,
+                                        correlation_id=upstream_correlation_id,
+                                        status_code=fallback_response.status_code,
+                                    )
+                                async for event in _run_stream(fallback_response):
+                                    yield event
+                                return
+                            await fallback_response.aread()
+                            error_payload = _safe_json(fallback_response)
+
+                    collapsed_payload = collapse_payload(payload)
+                    if (
+                        collapsed_payload != payload
+                        and collapsed_payload != fallback_payload
+                    ):
+                        if stream_logger:
+                            stream_logger.info(
+                                "lmstudio_payload_collapsed",
+                                endpoint="/v1/messages/stream",
+                                upstream_url=url,
+                                correlation_id=upstream_correlation_id,
+                            )
+                        current_event = None
+                        data_lines = []
+                        async with client.stream(
+                            "POST", url, json=collapsed_payload, headers=headers
+                        ) as collapsed_response:
+                            if collapsed_response.is_error:
+                                await collapsed_response.aread()
+                                if stream_logger:
+                                    stream_logger.info(
+                                        "upstream_connect_error",
+                                        endpoint="/v1/messages/stream",
+                                        upstream_url=url,
+                                        correlation_id=upstream_correlation_id,
+                                        status_code=collapsed_response.status_code,
+                                    )
+                                raise OpenAIUpstreamError(
+                                    collapsed_response.status_code,
+                                    _safe_json(collapsed_response),
+                                )
+                            if stream_logger:
+                                stream_logger.info(
+                                    "upstream_connect_ok",
+                                    endpoint="/v1/messages/stream",
+                                    upstream_url=url,
+                                    correlation_id=upstream_correlation_id,
+                                    status_code=collapsed_response.status_code,
+                                )
+                            async for event in _run_stream(collapsed_response):
+                                yield event
+                            return
+
                 if stream_logger:
                     stream_logger.info(
                         "upstream_connect_error",
@@ -70,7 +182,8 @@ async def stream_openai_events(
                         correlation_id=upstream_correlation_id,
                         status_code=response.status_code,
                     )
-                raise OpenAIUpstreamError(response.status_code, _safe_json(response))
+                raise OpenAIUpstreamError(response.status_code, error_payload)
+
             if stream_logger:
                 stream_logger.info(
                     "upstream_connect_ok",
@@ -80,27 +193,18 @@ async def stream_openai_events(
                     status_code=response.status_code,
                 )
 
-            async for line in response.aiter_lines():
-                if line == "":
-                    if current_event is None and not data_lines:
-                        continue
-                    event_name = current_event or "message"
-                    yield {"event": event_name, "data": _parse_data(data_lines)}
-                    current_event = None
-                    data_lines = []
-                    continue
+            async for event in _run_stream(response):
+                yield event
 
-                if line.startswith(":"):
-                    continue
 
-                if line.startswith("event:"):
-                    current_event = line[len("event:") :].lstrip()
-                    continue
-
-                if line.startswith("data:"):
-                    data_lines.append(line[len("data:") :].lstrip())
-                    continue
-
-            if current_event is not None or data_lines:
-                event_name = current_event or "message"
-                yield {"event": event_name, "data": _parse_data(data_lines)}
+def _is_invalid_input_union(error_payload: Any) -> bool:
+    if not isinstance(error_payload, dict):
+        return False
+    error = error_payload.get("error")
+    if not isinstance(error, dict):
+        return False
+    if error.get("param") != "input":
+        return False
+    if error.get("code") != "invalid_union":
+        return False
+    return True
