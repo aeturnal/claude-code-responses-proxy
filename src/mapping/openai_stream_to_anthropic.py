@@ -6,7 +6,11 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple, cast
 
+import logging
+
 from .openai_to_anthropic import derive_stop_reason, normalize_openai_usage
+
+logger = logging.getLogger(__name__)
 
 
 def format_sse(event: str, payload: Dict[str, Any]) -> str:
@@ -30,6 +34,8 @@ class StreamState:
     web_search_calls: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     web_search_result_emitted: set[str] = field(default_factory=set)
     web_search_use_emitted: set[str] = field(default_factory=set)
+
+    reasoning_text_by_key: Dict[Tuple[str, int, int], str] = field(default_factory=dict)
 
     def allocate_block_index(self, key: Optional[Tuple[int, int, str]] = None) -> int:
         index = self.next_block_index
@@ -299,6 +305,54 @@ async def translate_openai_events(
                 continue
 
         if event_type == "response.created":
+            continue
+
+        if event_type in {
+            "response.reasoning_text.delta",
+            "response.reasoning_text.done",
+            "response.reasoning_summary_part.added",
+            "response.reasoning_summary_part.delta",
+            "response.reasoning_summary_part.done",
+        }:
+            item_id = payload.get("item_id")
+            if not isinstance(item_id, str):
+                item_id = "unknown_item"
+            output_index, content_index = _extract_indices(payload)
+            oi = output_index if output_index is not None else -1
+            ci = content_index if content_index is not None else -1
+            key = (item_id, oi, ci)
+
+            if event_type == "response.reasoning_text.delta":
+                delta = payload.get("delta")
+                if isinstance(delta, str) and delta:
+                    state.reasoning_text_by_key[key] = state.reasoning_text_by_key.get(
+                        key, ""
+                    ) + delta
+            elif event_type == "response.reasoning_text.done":
+                final_text = payload.get("text")
+                if isinstance(final_text, str):
+                    state.reasoning_text_by_key[key] = final_text
+                logger.info(
+                    "upstream_reasoning_text",
+                    extra={
+                        "response_id": payload.get("response_id"),
+                        "item_id": item_id,
+                        "output_index": oi,
+                        "content_index": ci,
+                        "text": state.reasoning_text_by_key.get(key, ""),
+                    },
+                )
+            else:
+                logger.info(
+                    "upstream_reasoning_summary",
+                    extra={
+                        "response_id": payload.get("response_id"),
+                        "item_id": item_id,
+                        "output_index": oi,
+                        "content_index": ci,
+                        "payload": payload,
+                    },
+                )
             continue
 
         if event_type == "response.content_part.added":

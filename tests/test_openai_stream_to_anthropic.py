@@ -191,6 +191,50 @@ def test_tool_call_waits_for_name_and_skips_empty_delta() -> None:
     assert tool_stop == {"type": "content_block_stop", "index": tool_stop["index"]}
 
 
+def test_stream_ignores_reasoning_text_events() -> None:
+    events = [
+        {"type": "response.created", "response": {"id": "resp_1", "model": "x"}},
+        {
+            "type": "response.reasoning_text.delta",
+            "item_id": "msg_1",
+            "output_index": 0,
+            "content_index": 0,
+            "delta": "<harmony>think</harmony>",
+            "sequence_number": 2,
+        },
+        {
+            "type": "response.output_text.delta",
+            "item_id": "msg_1",
+            "output_index": 0,
+            "content_index": 0,
+            "delta": "Hello",
+            "sequence_number": 3,
+        },
+        {
+            "type": "response.output_text.done",
+            "item_id": "msg_1",
+            "output_index": 0,
+            "content_index": 0,
+            "text": "Hello",
+            "sequence_number": 4,
+        },
+        {
+            "type": "response.completed",
+            "response": {
+                "id": "resp_1",
+                "status": "completed",
+                "output": [],
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            },
+        },
+    ]
+
+    out = _collect_sse(events)
+    joined = "".join(json.dumps(p) for _, p in out)
+    assert "harmony" not in joined
+    assert "Hello" in joined
+
+
 def test_tool_call_sets_stop_reason_without_output() -> None:
     events = [
         {
