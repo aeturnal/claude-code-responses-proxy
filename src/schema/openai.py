@@ -18,7 +18,7 @@ class InputMessageItem(BaseModel):
     """OpenAI Responses input message item."""
 
     type: Literal["message"] = "message"
-    role: Literal["user", "system", "developer"]
+    role: Literal["user", "system", "developer", "assistant"]
     content: List[InputTextItem]
 
 

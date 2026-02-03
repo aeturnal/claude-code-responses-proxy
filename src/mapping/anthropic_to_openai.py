@@ -12,6 +12,7 @@ from src.schema.anthropic import (
     ServerToolUseBlock,
     TextBlock,
     ToolChoiceSpecific,
+    ToolReferenceBlock,
     ToolResultBlock,
     ToolUseBlock,
     WebSearchToolResultBlock,
@@ -51,16 +52,35 @@ def _system_to_instructions(
     return "\n".join(instructions)
 
 
+def _safe_json_dumps(value: object) -> str:
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except TypeError:
+        return json.dumps(str(value), ensure_ascii=False)
+
+
 def _tool_result_to_text(block: ToolResultBlock) -> str:
     if isinstance(block.content, str):
         return block.content
+    if isinstance(block.content, dict):
+        return _safe_json_dumps(block.content)
     texts: List[str] = []
     for item in block.content:
-        if not isinstance(item, TextBlock):
-            raise ValueError(
-                f"Unsupported tool_result content block type: {getattr(item, 'type', None)}"
+        if isinstance(item, TextBlock):
+            texts.append(item.text)
+            continue
+        if isinstance(item, ToolReferenceBlock):
+            payload = (
+                item.model_dump(exclude_none=True)
+                if hasattr(item, "model_dump")
+                else item.dict(exclude_none=True)
             )
-        texts.append(item.text)
+            texts.append(_safe_json_dumps(payload))
+            continue
+        if isinstance(item, dict):
+            texts.append(_safe_json_dumps(item))
+            continue
+        texts.append(_safe_json_dumps(item))
     return "\n".join(texts)
 
 
@@ -108,12 +128,10 @@ def _normalize_tool_parameters(schema: Optional[dict]) -> dict:
     return normalized
 
 
-MessageRole = Literal["user", "system", "developer"]
+MessageRole = Literal["user", "system", "developer", "assistant"]
 
 
 def _role_for_message(role: str) -> MessageRole:
-    if role == "assistant":
-        return "developer"
     return cast(MessageRole, role)
 
 
