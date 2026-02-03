@@ -194,6 +194,7 @@ resolver can use an unambiguous prefix match; otherwise it falls back to
 Logging is off by default. Enable it with:
 
 - `OBS_LOG_ENABLED=true`
+- `OBS_LOG_ALL=true` (enables request + stream logging with DEBUG level)
 - `OBS_LOG_FILE=./logs/requests.log`
 - `OBS_REDACTION_MODE=full|partial|none` (default: `full`)
 - `OBS_LOG_PRETTY=true|false`

@@ -12,6 +12,7 @@ import structlog
 from src.config import (
     ANTHROPIC_TELEMETRY_LOG_ENABLED,
     ANTHROPIC_TELEMETRY_LOG_FILE,
+    OBS_LOG_ALL,
     OBS_LOG_ENABLED,
     OBS_LOG_FILE,
     OBS_LOG_PRETTY,
@@ -53,12 +54,19 @@ def _build_formatter(
     )
 
 
+def _resolve_log_level() -> int:
+    if OBS_LOG_ALL:
+        return logging.DEBUG
+    return logging.INFO
+
+
 def _configure_stdlib_logging() -> None:
     renderer = _build_renderer()
     formatter = _build_formatter(renderer)
+    log_level = _resolve_log_level()
 
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(log_level)
     root_logger.handlers.clear()
 
     stdout_handler = logging.StreamHandler(sys.stdout)
@@ -72,7 +80,7 @@ def _configure_stdlib_logging() -> None:
     file_path = Path(OBS_LOG_FILE)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_handler = logging.FileHandler(file_path)
-    file_handler.setLevel(logging.INFO)
+    file_handler.setLevel(log_level)
     file_handler.setFormatter(formatter)
 
     root_logger.addHandler(stdout_handler)
@@ -86,15 +94,16 @@ def _configure_streaming_logging() -> None:
 
     renderer = _build_renderer()
     formatter = _build_formatter(renderer)
+    log_level = _resolve_log_level()
 
     file_path = Path(OBS_STREAM_LOG_FILE)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_handler = logging.FileHandler(file_path)
-    file_handler.setLevel(logging.INFO)
+    file_handler.setLevel(log_level)
     file_handler.setFormatter(formatter)
 
     streaming_logger = logging.getLogger("streaming")
-    streaming_logger.setLevel(logging.INFO)
+    streaming_logger.setLevel(log_level)
     streaming_logger.handlers.clear()
     streaming_logger.addHandler(file_handler)
     streaming_logger.propagate = False

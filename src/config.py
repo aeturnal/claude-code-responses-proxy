@@ -22,11 +22,14 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
-OBS_LOG_ENABLED = _env_bool("OBS_LOG_ENABLED", False)
+OBS_LOG_ALL = _env_bool("OBS_LOG_ALL", False)
+OBS_LOG_ENABLED = _env_bool("OBS_LOG_ENABLED", False) or OBS_LOG_ALL
 OBS_LOG_FILE = os.getenv("OBS_LOG_FILE", "./logs/requests.log")
 OBS_REDACTION_MODE = os.getenv("OBS_REDACTION_MODE", "full")
 OBS_LOG_PRETTY = _env_bool("OBS_LOG_PRETTY", True)
 OBS_STREAM_LOG_ENABLED = _env_bool("OBS_STREAM_LOG_ENABLED", OBS_LOG_ENABLED)
+if OBS_LOG_ALL:
+    OBS_STREAM_LOG_ENABLED = True
 OBS_STREAM_LOG_FILE = os.getenv("OBS_STREAM_LOG_FILE", "./logs/streaming.log")
 ANTHROPIC_TELEMETRY_LOG_ENABLED = _env_bool("ANTHROPIC_TELEMETRY_LOG_ENABLED", False)
 ANTHROPIC_TELEMETRY_LOG_FILE = os.getenv(
