@@ -21,23 +21,36 @@ API shape, but you want to run it against OpenAI models.
 
 ## Quickstart
 
-Create a virtualenv and install dependencies:
+Install dependencies using [uv](https://docs.astral.sh/uv/):
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -U pip
-python -m pip install -r requirements.txt
+uv sync
 ```
 
 Run the API:
 
 ```bash
 export OPENAI_API_KEY=sk-...
-python -m uvicorn src.app:app --reload
+uv run python -m uvicorn src.app:app --reload
 ```
 
 The server will be available at `http://localhost:8000`.
+
+### Installing spaCy Models (Optional)
+
+For partial PII redaction (`OBS_REDACTION_MODE=partial`), you need to install a spaCy language model:
+
+```bash
+uv run python -m spacy download en_core_web_sm
+```
+
+The proxy works without a model installed—it simply falls back to full redaction (`[REDACTED]`) when Presidio can't initialize. Choose a model based on your accuracy needs:
+
+- `en_core_web_sm` - Small, fast, good for most PII detection (~12MB)
+- `en_core_web_md` - Medium accuracy (~40MB)
+- `en_core_web_lg` - Highest accuracy (~560MB)
+
+### Using the Proxy
 
 If you're using Claude Code (or any client that normally targets Anthropic), point it at this proxy:
 
@@ -198,19 +211,19 @@ unavailable or errors, the implementation falls back to full redaction.
 Run tests:
 
 ```bash
-pytest -q
+uv run pytest -q
 ```
 
 Run a single test:
 
 ```bash
-pytest -q tests/test_token_counting.py::test_counts_basic_message
+uv run pytest -q tests/test_token_counting.py::test_counts_basic_message
 ```
 
 Quick syntax sanity check:
 
 ```bash
-python -m compileall src tests
+uv run python -m compileall src tests
 ```
 
 ## Verification Script
@@ -219,14 +232,25 @@ python -m compileall src tests
 results against OpenAI `usage.input_tokens` for a set of fixture cases.
 
 ```bash
-OPENAI_API_KEY=... python scripts/verify_count_tokens.py
+OPENAI_API_KEY=... uv run python scripts/verify_count_tokens.py
 ```
 
 By default it expects the proxy at `http://localhost:8000`. Override with:
 
 ```bash
-PROXY_BASE=http://localhost:8000 OPENAI_API_KEY=... python scripts/verify_count_tokens.py
+PROXY_BASE=http://localhost:8000 OPENAI_API_KEY=... uv run python scripts/verify_count_tokens.py
 ```
+
+## Python 3.13 Compatibility
+
+This proxy requires **Python 3.13+** and uses modern NLP dependencies:
+
+- **NumPy 2.x** - Required for Python 3.13 wheel support (no compilation needed)
+- **spaCy 3.8.7+** - First spaCy version with Python 3.13 support
+- **Thinc 8.3.6+** - spaCy's ML backend, NumPy 2.x compatible
+
+**Why the upgrade was needed:**
+Earlier versions (spaCy 3.7.x with NumPy 1.26.x) lacked Python 3.13 wheels, causing source builds that failed on Debian systems without Python.h and build tools. The upgrade to NumPy 2.x and spaCy 3.8+ provides pre-built wheels for Python 3.13 on all platforms.
 
 ## How it works (architecture)
 
