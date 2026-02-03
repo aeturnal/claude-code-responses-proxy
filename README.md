@@ -195,7 +195,7 @@ Logging is off by default. Enable it with:
 
 - `OBS_LOG_ENABLED=true`
 - `OBS_LOG_FILE=./logs/requests.log`
-- `OBS_REDACTION_MODE=full|partial` (default: `full`)
+- `OBS_REDACTION_MODE=full|partial|none` (default: `full`)
 - `OBS_LOG_PRETTY=true|false`
 
 Streaming-only logs can be controlled separately via:
@@ -205,6 +205,7 @@ Streaming-only logs can be controlled separately via:
 
 Redaction uses Presidio when `OBS_REDACTION_MODE=partial`; if Presidio is
 unavailable or errors, the implementation falls back to full redaction.
+Set `OBS_REDACTION_MODE=none` to disable redaction entirely.
 
 ## Development
 

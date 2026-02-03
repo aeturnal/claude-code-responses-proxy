@@ -48,7 +48,7 @@ def _get_presidio_engines() -> Tuple[Optional[Any], Optional[Any]]:
 
 def _redaction_mode(override: Optional[str] = None) -> str:
     mode = (override or OBS_REDACTION_MODE or "full").strip().lower()
-    if mode not in {"full", "partial"}:
+    if mode not in {"full", "partial", "none"}:
         return "full"
     return mode
 
@@ -60,6 +60,8 @@ def redact_text(text: Any, mode: Optional[str] = None) -> Any:
         return text
 
     mode = _redaction_mode(mode)
+    if mode == "none":
+        return text
     if mode == "full":
         return REDACTION_TOKEN
 
@@ -205,6 +207,8 @@ def redact_messages_request(
         return {}
 
     mode = _redaction_mode(None)
+    if mode == "none":
+        return data
     redacted = dict(data)
     truncated = False
 
@@ -307,6 +311,8 @@ def _redact_generic_value(value: Any, mode: Optional[str]) -> tuple[Any, bool]:
 
 def redact_generic_payload(payload: Any) -> Any:
     mode = _redaction_mode(None)
+    if mode == "none":
+        return _normalize_payload(payload)
     redacted, truncated = _redact_generic_value(payload, mode)
     if truncated and isinstance(redacted, dict):
         redacted = dict(redacted)
@@ -320,6 +326,8 @@ def redact_anthropic_response(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {}
 
     mode = _redaction_mode(None)
+    if mode == "none":
+        return data
     redacted = dict(data)
     content = data.get("content")
     if isinstance(content, list):
@@ -350,6 +358,8 @@ def redact_openai_error(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {}
 
     mode = _redaction_mode(None)
+    if mode == "none":
+        return data
     redacted = dict(data)
     error = data.get("error")
     if isinstance(error, dict):
