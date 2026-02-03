@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
+from .harmony import parse_harmony_tool_calls
+
 
 def _parse_tool_input(arguments: Any) -> Any:
     if arguments is None:
@@ -135,6 +137,9 @@ def map_openai_response_to_anthropic(response: Dict[str, Any]) -> Dict[str, Any]
     """Convert OpenAI Responses output into Anthropic message response."""
 
     content_blocks: List[Dict[str, Any]] = []
+    has_function_call = any(
+        item.get("type") == "function_call" for item in response.get("output", [])
+    )
     for item in response.get("output", []):
         item_type = item.get("type")
         if item_type == "web_search_call":
@@ -174,7 +179,24 @@ def map_openai_response_to_anthropic(response: Dict[str, Any]) -> Dict[str, Any]
                 if not isinstance(text, str):
                     continue
 
-                if content_type not in {"output_text", "text"} and content_type is not None:
+                has_harmony, tool_calls = parse_harmony_tool_calls(text)
+                if has_harmony:
+                    if not has_function_call:
+                        for tool_call in tool_calls:
+                            content_blocks.append(
+                                {
+                                    "type": "tool_use",
+                                    "id": f"harmony_tool_{len(content_blocks)}",
+                                    "name": tool_call.get("name"),
+                                    "input": tool_call.get("arguments") or {},
+                                }
+                            )
+                    continue
+
+                if (
+                    content_type not in {"output_text", "text"}
+                    and content_type is not None
+                ):
                     continue
 
                 annotations = content_item.get("annotations")

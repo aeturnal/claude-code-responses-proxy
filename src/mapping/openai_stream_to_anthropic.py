@@ -8,6 +8,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Tuple, cast
 
 import logging
 
+from .harmony import parse_harmony_tool_calls
 from .openai_to_anthropic import derive_stop_reason, normalize_openai_usage
 
 logger = logging.getLogger(__name__)
@@ -29,11 +30,16 @@ class StreamState:
     tool_block_by_call_id: Dict[str, int] = field(default_factory=dict)
     completed_blocks: set[int] = field(default_factory=set)
     completed_text_blocks: set[int] = field(default_factory=set)
+    started_text_blocks: set[int] = field(default_factory=set)
     started_tool_blocks: set[int] = field(default_factory=set)
     saw_tool_call: bool = False
+    saw_function_call: bool = False
     web_search_calls: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     web_search_result_emitted: set[str] = field(default_factory=set)
     web_search_use_emitted: set[str] = field(default_factory=set)
+    output_text_buffers: Dict[Tuple[int, int, str], str] = field(default_factory=dict)
+    harmony_text_keys: set[Tuple[int, int, str]] = field(default_factory=set)
+    harmony_consumed_keys: set[Tuple[int, int, str]] = field(default_factory=set)
 
     reasoning_text_by_key: Dict[Tuple[str, int, int], str] = field(default_factory=dict)
 
@@ -325,9 +331,9 @@ async def translate_openai_events(
             if event_type == "response.reasoning_text.delta":
                 delta = payload.get("delta")
                 if isinstance(delta, str) and delta:
-                    state.reasoning_text_by_key[key] = state.reasoning_text_by_key.get(
-                        key, ""
-                    ) + delta
+                    state.reasoning_text_by_key[key] = (
+                        state.reasoning_text_by_key.get(key, "") + delta
+                    )
             elif event_type == "response.reasoning_text.done":
                 final_text = payload.get("text")
                 if isinstance(final_text, str):
@@ -358,17 +364,7 @@ async def translate_openai_events(
         if event_type == "response.content_part.added":
             part = payload.get("part", {})
             if part.get("type") == "output_text":
-                key = _key_for_event(payload, "text")
-                index, created = state.get_or_create_block_index(key)
-                if created:
-                    yield format_sse(
-                        "content_block_start",
-                        {
-                            "type": "content_block_start",
-                            "index": index,
-                            "content_block": {"type": "text", "text": ""},
-                        },
-                    )
+                continue
             continue
 
         if event_type == "response.output_text.delta":
@@ -379,9 +375,46 @@ async def translate_openai_events(
                 text = delta.get("text") or payload.get("text") or ""
             else:
                 text = payload.get("text") or ""
-            key = _key_for_event(payload, "text")
+            key = _key_for_event(payload, "text") or (-1, -1, "text")
+            buffered = state.output_text_buffers.get(key, "") + text
+            has_harmony, tool_calls = parse_harmony_tool_calls(buffered)
+            if has_harmony:
+                state.harmony_text_keys.add(key)
+                state.output_text_buffers[key] = buffered
+                if state.saw_function_call:
+                    continue
+                if tool_calls and key not in state.harmony_consumed_keys:
+                    for tool_call in tool_calls:
+                        index = state.allocate_block_index()
+                        tool_id = f"harmony_tool_{index}"
+                        state.saw_tool_call = True
+                        yield format_sse(
+                            "content_block_start",
+                            {
+                                "type": "content_block_start",
+                                "index": index,
+                                "content_block": {
+                                    "type": "tool_use",
+                                    "id": tool_id,
+                                    "name": tool_call.get("name"),
+                                    "input": tool_call.get("arguments") or {},
+                                },
+                            },
+                        )
+                        yield format_sse(
+                            "content_block_stop",
+                            {"type": "content_block_stop", "index": index},
+                        )
+                    state.harmony_consumed_keys.add(key)
+                    state.output_text_buffers.pop(key, None)
+                continue
+            if key in state.harmony_text_keys:
+                state.output_text_buffers[key] = buffered
+                continue
+            state.output_text_buffers.pop(key, None)
             index, created = state.get_or_create_block_index(key)
             if created:
+                state.started_text_blocks.add(index)
                 yield format_sse(
                     "content_block_start",
                     {
@@ -410,9 +443,45 @@ async def translate_openai_events(
                 event_type == "response.output_text.done"
                 or part.get("type") == "output_text"
             ):
-                key = _key_for_event(payload, "text")
+                key = _key_for_event(payload, "text") or (-1, -1, "text")
+                if key in state.harmony_text_keys:
+                    buffered = state.output_text_buffers.get(key, "")
+                    has_harmony, tool_calls = parse_harmony_tool_calls(buffered)
+                    if (
+                        has_harmony
+                        and tool_calls
+                        and not state.saw_function_call
+                        and key not in state.harmony_consumed_keys
+                    ):
+                        for tool_call in tool_calls:
+                            index = state.allocate_block_index()
+                            tool_id = f"harmony_tool_{index}"
+                            state.saw_tool_call = True
+                            yield format_sse(
+                                "content_block_start",
+                                {
+                                    "type": "content_block_start",
+                                    "index": index,
+                                    "content_block": {
+                                        "type": "tool_use",
+                                        "id": tool_id,
+                                        "name": tool_call.get("name"),
+                                        "input": tool_call.get("arguments") or {},
+                                    },
+                                },
+                            )
+                            yield format_sse(
+                                "content_block_stop",
+                                {"type": "content_block_stop", "index": index},
+                            )
+                        state.harmony_consumed_keys.add(key)
+                    state.output_text_buffers.pop(key, None)
+                    continue
                 index, _ = state.get_or_create_block_index(key)
-                if index not in state.completed_text_blocks:
+                if (
+                    index not in state.completed_text_blocks
+                    and index in state.started_text_blocks
+                ):
                     state.completed_text_blocks.add(index)
                     yield format_sse(
                         "content_block_stop",
@@ -478,6 +547,7 @@ async def translate_openai_events(
                 continue
             if item.get("type") == "function_call":
                 state.saw_tool_call = True
+                state.saw_function_call = True
                 key = _key_for_event(payload, "tool_use")
                 index, _ = state.get_or_create_block_index(key)
                 call_id = item.get("call_id") or item.get("id")
@@ -565,6 +635,7 @@ async def translate_openai_events(
                 continue
             if item.get("type") == "function_call":
                 state.saw_tool_call = True
+                state.saw_function_call = True
                 key = _key_for_event(payload, "tool_use")
                 call_id = item.get("call_id") or item.get("id")
                 name = item.get("name")
@@ -838,6 +909,7 @@ async def translate_openai_events(
                 continue
             if item.get("type") == "function_call":
                 state.saw_tool_call = True
+                state.saw_function_call = True
                 call_id = (
                     item.get("call_id")
                     if isinstance(item.get("call_id"), str)
