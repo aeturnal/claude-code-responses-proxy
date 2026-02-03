@@ -15,12 +15,22 @@ class TextBlock(BaseModel):
     citations: Optional[List[Dict[str, Any]]] = None
 
 
+class ToolReferenceBlock(BaseModel):
+    """Tool reference content within a tool result."""
+
+    type: Literal["tool_reference"] = "tool_reference"
+    tool_name: str
+
+
+ToolResultContentBlock = Union[TextBlock, ToolReferenceBlock, Dict[str, Any]]
+
+
 class ToolResultBlock(BaseModel):
     """Anthropic tool result content block."""
 
     type: Literal["tool_result"] = "tool_result"
     tool_use_id: str
-    content: Union[str, List[TextBlock]]
+    content: Union[str, List[ToolResultContentBlock], Dict[str, Any]]
 
 
 class ToolUseBlock(BaseModel):

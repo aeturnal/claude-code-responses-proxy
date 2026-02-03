@@ -7,7 +7,6 @@ from src.schema.anthropic import (
     MessagesRequest,
     TextBlock,
     ToolDefinition,
-    ToolReferenceBlock,
     ToolResultBlock,
     ToolUseBlock,
 )
@@ -172,15 +171,13 @@ def test_web_search_tool_maps_to_builtin() -> None:
     assert mapped.include == ["web_search_call.action.sources"]
 
 
-def test_tool_result_tool_reference_stringified() -> None:
+def test_tool_result_dict_stringified() -> None:
     user_message = Message(
         role="user",
         content=[
             ToolResultBlock(
                 tool_use_id="toolu_1",
-                content=[
-                    ToolReferenceBlock(tool_name="mcp__n8n-mcp__tools_documentation")
-                ],
+                content={"a": 1, "b": "ok"},
             )
         ],
     )
@@ -194,7 +191,4 @@ def test_tool_result_tool_reference_stringified() -> None:
 
     assert isinstance(input_items[0], FunctionCallOutputItem)
     assert input_items[0].call_id == "toolu_1"
-    assert json.loads(input_items[0].output) == {
-        "type": "tool_reference",
-        "tool_name": "mcp__n8n-mcp__tools_documentation",
-    }
+    assert json.loads(input_items[0].output) == {"a": 1, "b": "ok"}
