@@ -24,6 +24,7 @@ from src.observability.logging import (
 )
 from src.observability.redaction import (
     redact_anthropic_response,
+    redact_generic_payload,
     redact_messages_request,
     redact_openai_error,
     summarize_messages_request,
@@ -133,6 +134,15 @@ async def create_message(http_request: Request, request: MessagesRequest) -> Any
 
     openai_request = map_anthropic_request_to_openai(request)
     payload = _normalize_openai_payload(openai_request)
+    if logging_enabled():
+        logger.debug(
+            "upstream_request",
+            endpoint=str(http_request.url.path),
+            correlation_id=correlation_id_value,
+            model_anthropic=model_anthropic,
+            model_openai=model_openai,
+            payload=redact_generic_payload(payload),
+        )
     try:
         response = await create_openai_response(payload)
     except MissingOpenAIAPIKeyError:
@@ -251,6 +261,15 @@ async def stream_messages(
     openai_request = map_anthropic_request_to_openai(request)
     payload = _normalize_openai_payload(openai_request)
     payload["stream"] = True
+    if logging_enabled():
+        logger.debug(
+            "upstream_request",
+            endpoint=str(http_request.url.path),
+            correlation_id=correlation_id_value,
+            model_anthropic=model_anthropic,
+            model_openai=model_openai,
+            payload=redact_generic_payload(payload),
+        )
     initial_usage: Optional[Dict[str, Any]] = None
     try:
         input_tokens = count_openai_request_tokens(payload)
