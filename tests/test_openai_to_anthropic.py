@@ -117,6 +117,50 @@ def test_normalize_openai_usage_maps_cached_tokens() -> None:
     }
 
 
+def test_drops_reasoning_content_items() -> None:
+    response = {
+        "id": "resp_x",
+        "status": "completed",
+        "output": [
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    {"type": "reasoning_text", "text": "<harmony>thinking</harmony>"},
+                    {"type": "output_text", "text": "Hello world"},
+                ],
+            }
+        ],
+        "usage": {"input_tokens": 1, "output_tokens": 2},
+    }
+
+    anth = map_openai_response_to_anthropic(response)
+    assert [b["text"] for b in anth["content"] if b["type"] == "text"] == [
+        "Hello world"
+    ]
+
+
+def test_accepts_text_type_in_addition_to_output_text() -> None:
+    response = {
+        "id": "resp_x",
+        "status": "completed",
+        "output": [
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "Alt type text"},
+                ],
+            }
+        ],
+        "usage": {"input_tokens": 1, "output_tokens": 2},
+    }
+
+    anth = map_openai_response_to_anthropic(response)
+    assert anth["content"][0]["type"] == "text"
+    assert anth["content"][0]["text"] == "Alt type text"
+
+
 def test_normalize_openai_usage_defaults_missing_fields() -> None:
     normalized = normalize_openai_usage(None)
 

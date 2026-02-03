@@ -99,20 +99,34 @@ def normalize_openai_usage(usage: Optional[Dict[str, Any]]) -> Dict[str, int]:
         usage = {}
     input_tokens = usage.get("input_tokens")
     if not isinstance(input_tokens, int):
+        input_tokens = usage.get("prompt_tokens")
+    if not isinstance(input_tokens, int):
         input_tokens = 0
+
     output_tokens = usage.get("output_tokens")
     if not isinstance(output_tokens, int):
+        output_tokens = usage.get("completion_tokens")
+    if not isinstance(output_tokens, int):
         output_tokens = 0
+
     details = usage.get("input_tokens_details")
+    if not isinstance(details, dict):
+        details = usage.get("prompt_tokens_details")
     cached_tokens = 0
     if isinstance(details, dict):
         cached_value = details.get("cached_tokens")
         if isinstance(cached_value, int):
             cached_tokens = cached_value
+
+    # OpenAI reports total input tokens and (optionally) cached input tokens.
+    # Anthropic-style usage expects non-cached input tokens plus cache_read tokens.
+    non_cached_input_tokens = input_tokens - cached_tokens
+    if non_cached_input_tokens < 0:
+        non_cached_input_tokens = 0
     return {
         "cache_creation_input_tokens": 0,
         "cache_read_input_tokens": cached_tokens,
-        "input_tokens": input_tokens,
+        "input_tokens": non_cached_input_tokens,
         "output_tokens": output_tokens,
     }
 
@@ -147,19 +161,33 @@ def map_openai_response_to_anthropic(response: Dict[str, Any]) -> Dict[str, Any]
             continue
         if item_type == "message":
             for content_item in item.get("content", []):
-                if content_item.get("type") == "output_text":
-                    text = content_item.get("text", "")
-                    annotations = content_item.get("annotations")
-                    citations = None
-                    if isinstance(annotations, list):
-                        citations = _citations_from_annotations(text, annotations)
-                    block: Dict[str, Any] = {
-                        "type": "text",
-                        "text": text,
-                    }
-                    if citations:
-                        block["citations"] = citations
-                    content_blocks.append(block)
+                content_type = content_item.get("type")
+                if content_type in {
+                    "reasoning_text",
+                    "reasoning_summary_text",
+                    "internal",
+                    "internal_text",
+                }:
+                    continue
+
+                text = content_item.get("text")
+                if not isinstance(text, str):
+                    continue
+
+                if content_type not in {"output_text", "text"} and content_type is not None:
+                    continue
+
+                annotations = content_item.get("annotations")
+                citations = None
+                if isinstance(annotations, list):
+                    citations = _citations_from_annotations(text, annotations)
+                block: Dict[str, Any] = {
+                    "type": "text",
+                    "text": text,
+                }
+                if citations:
+                    block["citations"] = citations
+                content_blocks.append(block)
             continue
         if item_type == "function_call":
             content_blocks.append(
