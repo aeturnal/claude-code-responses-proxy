@@ -182,8 +182,10 @@ async def create_openai_response(payload: Dict[str, Any]) -> Dict[str, Any]:
             url, headers, _ = await _build_upstream_request(client)
             response = await client.post(url, json=request_payload, headers=headers)
 
+        # Codex mode forces stream=true. Some upstreams may not reliably set the
+        # SSE content-type header, so attempt SSE parse opportunistically.
         content_type = response.headers.get("content-type", "")
-        if "text/event-stream" in content_type:
+        if "text/event-stream" in content_type or "event:" in response.text:
             completed = _extract_completed_response_from_sse(response.text)
             if completed is not None:
                 return completed
@@ -222,7 +224,22 @@ async def create_openai_response(payload: Dict[str, Any]) -> Dict[str, Any]:
                         error_payload = _safe_json(response)
             raise OpenAIUpstreamError(response.status_code, error_payload)
 
-        return response.json()
+        try:
+            return response.json()
+        except ValueError:
+            # Avoid crashing the ASGI app on upstream non-JSON success responses.
+            text = response.text
+            raise OpenAIUpstreamError(
+                502,
+                {
+                    "error": {
+                        "message": "Upstream returned non-JSON success response",
+                        "upstream_status": response.status_code,
+                        "upstream_content_type": content_type,
+                        "upstream_body": text[:2048],
+                    }
+                },
+            )
 
 
 def _is_invalid_input_union(error_payload: Any) -> bool:
