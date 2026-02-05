@@ -84,6 +84,9 @@ async def stream_openai_events(
 
     payload = dict(payload)
     payload["stream"] = True
+    if config.require_upstream_mode() == "codex":
+        # ChatGPT Codex backend requires store=false.
+        payload.setdefault("store", False)
 
     current_event: Optional[str] = None
     data_lines: List[str] = []

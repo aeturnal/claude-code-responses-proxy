@@ -85,13 +85,19 @@ async def create_openai_response(payload: Dict[str, Any]) -> Dict[str, Any]:
     """POST a Responses API payload and return the JSON response."""
     async with httpx.AsyncClient(timeout=300.0) as client:
         url, headers, can_refresh = await _build_upstream_request(client)
-        response = await client.post(url, json=payload, headers=headers)
+
+        request_payload = dict(payload)
+        if config.require_upstream_mode() == "codex":
+            # ChatGPT Codex backend requires store=false.
+            request_payload.setdefault("store", False)
+
+        response = await client.post(url, json=request_payload, headers=headers)
 
         if response.status_code == 401 and can_refresh:
             # Retry once after a forced refresh.
             await _codex_manager().refresh_on_unauthorized(client)
             url, headers, _ = await _build_upstream_request(client)
-            response = await client.post(url, json=payload, headers=headers)
+            response = await client.post(url, json=request_payload, headers=headers)
 
         if response.is_error:
             error_payload = _safe_json(response)
