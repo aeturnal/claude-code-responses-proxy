@@ -1,23 +1,16 @@
 # Claude Code -> OpenAI Responses Proxy
 
-FastAPI service that accepts Anthropic-style `/v1/messages` requests and translates
-them into OpenAI Responses API calls, returning an Anthropic-compatible envelope.
+FastAPI service that accepts Anthropic-style `/v1/messages` requests and translates them into OpenAI Responses API calls, returning an Anthropic-compatible envelope.
 
-This is useful when you have a client or SDK that speaks the Anthropic Messages
-API shape, but you want to run it against OpenAI models.
+This is useful when you have a client or SDK that speaks the Anthropic Messages API shape (for example, Claude Code), but you want to run it against OpenAI models.
 
-## What It Does
+## What it does
 
-- **Messages proxy:** `POST /v1/messages` (non-streaming) maps Anthropic Messages
-  requests to OpenAI `/responses` and maps the response back.
-- **Streaming (SSE):** `POST /v1/messages/stream` streams Anthropic-style SSE
-  events translated from OpenAI streaming.
-- **Token counting:** `POST /v1/messages/count_tokens` (and alias
-  `POST /v1/messages/token_count`) returns OpenAI-aligned `input_tokens` for an
-  Anthropic request without calling OpenAI.
-- **Model mapping:** map Anthropic model names to OpenAI model names via
-  `MODEL_MAP_JSON` (with a default model fallback).
-- **Observability:** optional JSON logs with PII-safe redaction.
+- Messages proxy: `POST /v1/messages` maps Anthropic Messages requests to OpenAI `POST /responses` and maps the response back.
+- Streaming (SSE, Server-Sent Events): `POST /v1/messages/stream` streams Anthropic-style SSE events translated from upstream OpenAI-style streaming.
+- Token counting: `POST /v1/messages/count_tokens` (and alias `POST /v1/messages/token_count`) returns OpenAI-aligned `input_tokens` for an Anthropic request without calling the upstream.
+- Model mapping: map Anthropic model names to OpenAI model names via `MODEL_MAP_JSON` (with a default model fallback).
+- Observability: optional JSON logs with redaction.
 
 ## Quickstart
 
@@ -27,36 +20,87 @@ Install dependencies using [uv](https://docs.astral.sh/uv/):
 uv sync
 ```
 
-Run the API:
+Run the API (OpenAI Platform API key mode):
 
 ```bash
+export OPENAI_UPSTREAM_MODE=openai
 export OPENAI_API_KEY=sk-...
-uv run python -m uvicorn src.app:app --reload
+uv run uvicorn src.app:app --host 0.0.0.0 --port 8000
 ```
 
 The server will be available at `http://localhost:8000`.
 
-### Installing spaCy Models (Optional)
+### Point Claude Code at the proxy
 
-For partial PII redaction (`OBS_REDACTION_MODE=partial`), you need to install a spaCy language model:
-
-```bash
-uv run python -m spacy download en_core_web_sm
-```
-
-The proxy works without a model installed—it simply falls back to full redaction (`[REDACTED]`) when Presidio can't initialize. Choose a model based on your accuracy needs:
-
-- `en_core_web_sm` - Small, fast, good for most PII detection (~12MB)
-- `en_core_web_md` - Medium accuracy (~40MB)
-- `en_core_web_lg` - Highest accuracy (~560MB)
-
-### Using the Proxy
-
-If you're using Claude Code (or any client that normally targets Anthropic), point it at this proxy:
+Claude Code is an Anthropic client. To route its `/v1/messages` calls to this service:
 
 ```bash
 export ANTHROPIC_BASE_URL=http://localhost:8000
 ```
+
+## Upstream modes
+
+This proxy supports two upstream authentication modes:
+
+### 1) OpenAI Platform API key mode (default)
+
+- Upstream URL: `OPENAI_BASE_URL` (default `https://api.openai.com/v1`)
+- Endpoint: `POST {OPENAI_BASE_URL}/responses`
+- Auth header: `Authorization: Bearer ${OPENAI_API_KEY}`
+
+Env vars:
+
+- `OPENAI_UPSTREAM_MODE=openai`
+- `OPENAI_API_KEY` (required)
+
+### 2) Codex (ChatGPT account) mode
+
+This mode lets you use your ChatGPT Codex login credentials instead of an OpenAI Platform API key.
+
+Important notes:
+
+- This does not call `api.openai.com`. It calls the ChatGPT Codex backend.
+- You must have Codex CLI installed and logged in at least once.
+
+Setup steps:
+
+1) Log in with Codex CLI:
+
+```bash
+codex login
+```
+
+2) Start the proxy in codex mode:
+
+```bash
+export OPENAI_UPSTREAM_MODE=codex
+# Optional: override where the proxy reads Codex credentials
+export CODEX_AUTH_PATH="$HOME/.codex/auth.json"
+
+uv run uvicorn src.app:app --host 0.0.0.0 --port 8000
+```
+
+What codex mode does under the hood:
+
+- Reads `~/.codex/auth.json` (or `CODEX_AUTH_PATH`) and uses `tokens.access_token`.
+- Sends requests to `https://chatgpt.com/backend-api/codex/responses`.
+- Adds `ChatGPT-Account-ID` header if `tokens.account_id` exists.
+- Refreshes tokens using the stored `tokens.refresh_token` via `https://auth.openai.com/oauth/token`.
+- Retries once on 401 after forcing a refresh.
+
+Codex backend compatibility shim (implemented by this repo):
+
+The ChatGPT Codex backend is stricter than the OpenAI Platform API and differs in a few request fields. In codex mode, the proxy applies best-effort rewrites to stay compatible, including:
+
+- Forces `store=false`.
+- Forces `stream=true` and parses `response.completed` out of SSE when using the non-streaming `/v1/messages` endpoint.
+- Injects default `instructions` when missing (Claude Code sends a minimal startup probe that otherwise fails).
+- Strips known unsupported parameters (`max_output_tokens`, `max_tokens`, `max_tool_calls`).
+- Rewrites assistant history message spans from `input_text` to `output_text`.
+
+You can set the injected default instructions with:
+
+- `CODEX_DEFAULT_INSTRUCTIONS` (default: `You are a helpful assistant.`)
 
 ## Endpoints
 
@@ -66,9 +110,9 @@ Non-streaming by default. Returns an Anthropic-style response envelope:
 
 - `type: "message"`
 - `role: "assistant"`
-- `content: [...]` (text + tool blocks)
-- `stop_reason` derived from OpenAI response status
-- `usage` normalized from OpenAI usage
+- `content: [...]` (text and tool blocks)
+- `stop_reason` derived from upstream status
+- `usage` normalized from upstream usage
 
 Minimal request example:
 
@@ -87,15 +131,12 @@ Streaming via `/v1/messages` is supported by setting `"stream": true`.
 
 ### POST /v1/messages/stream
 
-Streams Anthropic-compatible SSE events (text/event-stream).
+Streams Anthropic-compatible SSE events (`text/event-stream`).
 
-Notes for client UX:
+Notes:
 
-- `message_start` includes the Anthropic model name (not the OpenAI model), so
-  clients can map context windows correctly.
-- `message_start` also includes a locally computed `usage.input_tokens` value
-  to support prompt/context progress indicators before the OpenAI stream emits
-  final usage totals.
+- `message_start` includes the Anthropic model name (not the OpenAI model), so clients can map context windows correctly.
+- `message_start` includes a locally computed `usage.input_tokens` value to support prompt progress indicators before the upstream stream emits final usage totals.
 
 ```bash
 curl -N http://localhost:8000/v1/messages/stream \
@@ -108,8 +149,7 @@ curl -N http://localhost:8000/v1/messages/stream \
   }'
 ```
 
-On streaming failures, the server emits `event: error` with an Anthropic error
-envelope as the `data:` payload.
+On streaming failures, the server emits `event: error` with an Anthropic error envelope as the `data:` payload.
 
 ### POST /v1/messages/count_tokens
 
@@ -136,30 +176,11 @@ Response:
 
 ## Configuration
 
-### OpenAI upstream
+### Model selection
 
-- `OPENAI_API_KEY` (required for upstream calls)
-- `OPENAI_BASE_URL` (default `https://api.openai.com/v1`)
 - `OPENAI_DEFAULT_MODEL` (default `gpt-5.2`)
 
-If `OPENAI_API_KEY` is missing, `/v1/messages` returns a 401 Anthropic error
-envelope, and streaming emits `event: error`.
-
-### Pointing Claude Code at the proxy
-
-Claude Code is an Anthropic client; to route its `/v1/messages` calls to this service, set:
-
-```bash
-ANTHROPIC_BASE_URL=http://localhost:8000
-```
-
-To force Claude Code to use a specific Anthropic model for subagents, set:
-
-```bash
-export CLAUDE_CODE_SUBAGENT_MODEL="claude-haiku-4-5"
-```
-
-When `ANTHROPIC_BASE_URL` points at this proxy, that subagent model name will be translated the same way as any other request model (via `MODEL_MAP_JSON`, falling back to `OPENAI_DEFAULT_MODEL`).
+In codex mode, some models may not be available for your ChatGPT account. If you see an upstream error like "model is not supported when using Codex with a ChatGPT account", change `OPENAI_DEFAULT_MODEL` and or your mapping.
 
 ### Model mapping (MODEL_MAP_JSON)
 
@@ -185,28 +206,34 @@ When `ANTHROPIC_BASE_URL` points at this proxy, that subagent model name will be
 }
 ```
 
-Keys are normalized (trimmed + casefolded). If there is no exact match, the
-resolver can use an unambiguous prefix match; otherwise it falls back to
-`OPENAI_DEFAULT_MODEL`.
+Keys are normalized (trimmed plus casefolded). If there is no exact match, the resolver can use an unambiguous prefix match; otherwise it falls back to `OPENAI_DEFAULT_MODEL`.
 
 ### Observability logs
 
 Logging is off by default. Enable it with:
 
 - `OBS_LOG_ENABLED=true`
-- `OBS_LOG_ALL=true` (enables request + stream logging with DEBUG level)
+- `OBS_LOG_ALL=true` (enables request plus stream logging)
 - `OBS_LOG_FILE=./logs/requests.log`
 - `OBS_REDACTION_MODE=full|partial|none` (default: `full`)
 - `OBS_LOG_PRETTY=true|false`
 
-Streaming-only logs can be controlled separately via:
+Streaming-only logs can be controlled separately:
 
 - `OBS_STREAM_LOG_ENABLED=true`
 - `OBS_STREAM_LOG_FILE=./logs/streaming.log`
 
-Redaction uses Presidio when `OBS_REDACTION_MODE=partial`; if Presidio is
-unavailable or errors, the implementation falls back to full redaction.
-Set `OBS_REDACTION_MODE=none` to disable redaction entirely.
+Caution: `OBS_REDACTION_MODE=none` will log prompts and outputs in plaintext.
+
+### Installing spaCy models (optional)
+
+For partial PII (Personally Identifiable Information) redaction (`OBS_REDACTION_MODE=partial`), you need a spaCy language model:
+
+```bash
+uv run python -m spacy download en_core_web_sm
+```
+
+The proxy works without a model installed; it falls back to full redaction if Presidio cannot initialize.
 
 ## Development
 
@@ -228,66 +255,37 @@ Quick syntax sanity check:
 uv run python -m compileall src tests
 ```
 
-## Verification Script
+## Troubleshooting
 
-`scripts/verify_count_tokens.py` compares the proxy's `/v1/messages/count_tokens`
-results against OpenAI `usage.input_tokens` for a set of fixture cases.
+### Claude Code shows a 400 immediately on launch (codex mode)
 
-```bash
-OPENAI_API_KEY=... uv run python scripts/verify_count_tokens.py
-```
+Claude Code sends an initial probe request at startup. In codex mode, the upstream backend is strict. This repo injects default `instructions` in codex mode to satisfy that requirement.
 
-By default it expects the proxy at `http://localhost:8000`. Override with:
+If you still see a 400, enable logs and check the upstream `detail`:
 
 ```bash
-PROXY_BASE=http://localhost:8000 OPENAI_API_KEY=... uv run python scripts/verify_count_tokens.py
+OBS_LOG_ALL=1 OBS_REDACTION_MODE=full OPENAI_UPSTREAM_MODE=codex \
+  uv run uvicorn src.app:app --host 0.0.0.0 --port 8000
 ```
 
-## Python 3.13 Compatibility
+### Non-streaming requests fail with SSE or JSON parsing
 
-This proxy requires **Python 3.13+** and uses modern NLP dependencies:
+In codex mode, the proxy forces `stream=true` upstream and then extracts the `response.completed` event to return a non-streaming response. If you see parsing errors, file an issue with the upstream response headers and a redacted snippet of the response body.
 
-- **NumPy 2.x** - Required for Python 3.13 wheel support (no compilation needed)
-- **spaCy 3.8.7+** - First spaCy version with Python 3.13 support
-- **Thinc 8.3.6+** - spaCy's ML backend, NumPy 2.x compatible
-
-**Why the upgrade was needed:**
-Earlier versions (spaCy 3.7.x with NumPy 1.26.x) lacked Python 3.13 wheels, causing source builds that failed on Debian systems without Python.h and build tools. The upgrade to NumPy 2.x and spaCy 3.8+ provides pre-built wheels for Python 3.13 on all platforms.
-
-## How it works (architecture)
+## Architecture
 
 At a high level, the service is an adapter layer:
 
-1. **FastAPI app wiring**: `src/app.py` configures logging and middleware and
-   registers the API routers.
-2. **HTTP handlers**: `src/handlers/messages.py` implements `/v1/messages` and
-   `/v1/messages/stream`; `src/handlers/count_tokens.py` implements token count
-   endpoints.
-3. **Mapping (Anthropic → OpenAI)**: `src/mapping/anthropic_to_openai.py` builds
-   an OpenAI Responses request from an Anthropic Messages payload (messages,
-   tools/tool_choice, etc.).
-4. **Transport**: `src/transport/openai_client.py` posts to OpenAI
-   `{OPENAI_BASE_URL}/responses` using `OPENAI_API_KEY`.
-5. **Mapping (OpenAI → Anthropic)**: `src/mapping/openai_to_anthropic.py`
-   converts OpenAI `output` items into an Anthropic-compatible envelope
-   (`content`, `stop_reason`, `usage`).
+1) FastAPI app wiring: `src/app.py` configures logging and middleware and registers the routers.
+2) HTTP handlers: `src/handlers/messages.py` implements `/v1/messages` and `/v1/messages/stream`; `src/handlers/count_tokens.py` implements token count endpoints.
+3) Mapping (Anthropic to OpenAI): `src/mapping/anthropic_to_openai.py` builds an OpenAI Responses request from an Anthropic Messages payload.
+4) Transport: `src/transport/openai_client.py` posts to the configured upstream.
+5) Mapping (OpenAI to Anthropic): `src/mapping/openai_to_anthropic.py` converts upstream `output` items into an Anthropic-compatible envelope.
 
 ### Streaming (SSE)
 
 Streaming is implemented as translated server-sent events:
 
-- Upstream stream reader: `src/transport/openai_stream.py` reads OpenAI SSE
-  frames.
-- Translator: `src/mapping/openai_stream_to_anthropic.py` converts OpenAI stream
-  events into Anthropic-style SSE events (`message_start`, `message_delta`,
-  `message_end`, etc.).
-- On streaming failures, the server emits `event: error` containing an Anthropic
-  error envelope as the `data:` payload.
-
-### Observability and redaction
-
-- Logging is `structlog`-based (`src/observability/logging.py`) and is off by
-  default.
-- Redaction helpers live in `src/observability/redaction.py`. When
-  `OBS_REDACTION_MODE=partial`, redaction uses Presidio; if Presidio is
-  unavailable or errors, the implementation falls back to full redaction.
+- Upstream stream reader: `src/transport/openai_stream.py` reads upstream SSE frames.
+- Translator: `src/mapping/openai_stream_to_anthropic.py` converts upstream stream events into Anthropic-style SSE events (`message_start`, `message_delta`, `message_end`, etc.).
+- On streaming failures, the server emits `event: error` containing an Anthropic error envelope as the `data:` payload.
