@@ -136,11 +136,9 @@ async def create_openai_response(payload: Dict[str, Any]) -> Dict[str, Any]:
             request_payload.setdefault("store", False)
             request_payload.setdefault("stream", True)
 
-            # ChatGPT Codex backend does not accept max_output_tokens.
-            # Translate to max_tokens (best-effort).
-            mot = request_payload.pop("max_output_tokens", None)
-            if mot is not None and request_payload.get("max_tokens") is None:
-                request_payload["max_tokens"] = mot
+            # ChatGPT Codex backend does not accept max_output_tokens/max_tokens.
+            request_payload.pop("max_output_tokens", None)
+            request_payload.pop("max_tokens", None)
 
         response = await client.post(url, json=request_payload, headers=headers)
 

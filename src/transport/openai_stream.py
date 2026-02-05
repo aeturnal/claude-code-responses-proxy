@@ -88,10 +88,9 @@ async def stream_openai_events(
         # ChatGPT Codex backend requires store=false.
         payload.setdefault("store", False)
 
-        # ChatGPT Codex backend does not accept max_output_tokens.
-        mot = payload.pop("max_output_tokens", None)
-        if mot is not None and payload.get("max_tokens") is None:
-            payload["max_tokens"] = mot
+        # ChatGPT Codex backend does not accept max_output_tokens/max_tokens.
+        payload.pop("max_output_tokens", None)
+        payload.pop("max_tokens", None)
 
     current_event: Optional[str] = None
     data_lines: List[str] = []
