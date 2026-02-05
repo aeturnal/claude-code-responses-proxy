@@ -20,6 +20,9 @@ CODEX_BASE_URL = os.getenv(
     "CODEX_BASE_URL", "https://chatgpt.com/backend-api/codex"
 ).rstrip("/")
 CODEX_AUTH_PATH = os.getenv("CODEX_AUTH_PATH")
+CODEX_DEFAULT_INSTRUCTIONS = os.getenv(
+    "CODEX_DEFAULT_INSTRUCTIONS", "You are a helpful assistant."
+)
 
 logger = structlog.get_logger(__name__)
 

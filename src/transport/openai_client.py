@@ -166,6 +166,10 @@ async def create_openai_response(payload: Dict[str, Any]) -> Dict[str, Any]:
             # ChatGPT Codex backend does not accept max_tool_calls.
             request_payload.pop("max_tool_calls", None)
 
+            # ChatGPT Codex backend appears to require instructions on all requests.
+            if not request_payload.get("instructions"):
+                request_payload["instructions"] = config.CODEX_DEFAULT_INSTRUCTIONS
+
             # ChatGPT Codex backend expects assistant history content spans to use output_text.
             # (user/system/developer message spans remain input_text)
             _codex_rewrite_message_span_types(request_payload)

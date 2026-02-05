@@ -95,6 +95,10 @@ async def stream_openai_events(
         # ChatGPT Codex backend does not accept max_tool_calls.
         payload.pop("max_tool_calls", None)
 
+        # ChatGPT Codex backend appears to require instructions on all requests.
+        if not payload.get("instructions"):
+            payload["instructions"] = config.CODEX_DEFAULT_INSTRUCTIONS
+
         # ChatGPT Codex backend expects assistant history spans to use output_text.
         _codex_rewrite_message_span_types(payload)
 
