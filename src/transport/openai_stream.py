@@ -92,6 +92,9 @@ async def stream_openai_events(
         payload.pop("max_output_tokens", None)
         payload.pop("max_tokens", None)
 
+        # ChatGPT Codex backend does not accept max_tool_calls.
+        payload.pop("max_tool_calls", None)
+
         # ChatGPT Codex backend expects assistant history spans to use output_text.
         _codex_rewrite_message_span_types(payload)
 

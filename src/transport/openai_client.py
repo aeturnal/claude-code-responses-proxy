@@ -163,6 +163,9 @@ async def create_openai_response(payload: Dict[str, Any]) -> Dict[str, Any]:
             request_payload.pop("max_output_tokens", None)
             request_payload.pop("max_tokens", None)
 
+            # ChatGPT Codex backend does not accept max_tool_calls.
+            request_payload.pop("max_tool_calls", None)
+
             # ChatGPT Codex backend expects assistant history content spans to use output_text.
             # (user/system/developer message spans remain input_text)
             _codex_rewrite_message_span_types(request_payload)
