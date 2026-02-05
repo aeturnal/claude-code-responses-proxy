@@ -92,6 +92,9 @@ async def stream_openai_events(
         payload.pop("max_output_tokens", None)
         payload.pop("max_tokens", None)
 
+        # ChatGPT Codex backend expects assistant history spans to use output_text.
+        _codex_rewrite_message_span_types(payload)
+
     current_event: Optional[str] = None
     data_lines: List[str] = []
 
@@ -221,6 +224,29 @@ async def stream_openai_events(
                     yield event
                 return
             raise
+
+
+def _codex_rewrite_message_span_types(payload: Dict[str, Any]) -> None:
+    input_items = payload.get("input")
+    if not isinstance(input_items, list):
+        return
+
+    for item in input_items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "message":
+            continue
+        role = item.get("role")
+        if role != "assistant":
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for span in content:
+            if not isinstance(span, dict):
+                continue
+            if span.get("type") == "input_text":
+                span["type"] = "output_text"
 
 
 def _is_invalid_input_union(error_payload: Any) -> bool:

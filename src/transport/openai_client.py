@@ -45,6 +45,29 @@ def _safe_json(response: httpx.Response) -> Any:
         return {"error": {"message": response.text}}
 
 
+def _codex_rewrite_message_span_types(payload: Dict[str, Any]) -> None:
+    input_items = payload.get("input")
+    if not isinstance(input_items, list):
+        return
+
+    for item in input_items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "message":
+            continue
+        role = item.get("role")
+        if role != "assistant":
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for span in content:
+            if not isinstance(span, dict):
+                continue
+            if span.get("type") == "input_text":
+                span["type"] = "output_text"
+
+
 def _extract_completed_response_from_sse(body: str) -> Optional[Dict[str, Any]]:
     """Parse an OpenAI-style SSE transcript and return the response.completed payload."""
     current_event: Optional[str] = None
@@ -139,6 +162,10 @@ async def create_openai_response(payload: Dict[str, Any]) -> Dict[str, Any]:
             # ChatGPT Codex backend does not accept max_output_tokens/max_tokens.
             request_payload.pop("max_output_tokens", None)
             request_payload.pop("max_tokens", None)
+
+            # ChatGPT Codex backend expects assistant history content spans to use output_text.
+            # (user/system/developer message spans remain input_text)
+            _codex_rewrite_message_span_types(request_payload)
 
         response = await client.post(url, json=request_payload, headers=headers)
 
