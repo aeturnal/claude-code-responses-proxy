@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+import json
+
 from functools import lru_cache
 from pathlib import Path
 
@@ -41,6 +43,48 @@ def _safe_json(response: httpx.Response) -> Any:
         return response.json()
     except ValueError:
         return {"error": {"message": response.text}}
+
+
+def _extract_completed_response_from_sse(body: str) -> Optional[Dict[str, Any]]:
+    """Parse an OpenAI-style SSE transcript and return the response.completed payload."""
+    current_event: Optional[str] = None
+    data_lines: list[str] = []
+
+    def _flush() -> Optional[Dict[str, Any]]:
+        nonlocal current_event, data_lines
+        if current_event is None and not data_lines:
+            return None
+        event_name = current_event or "message"
+        raw = "\n".join(data_lines)
+        current_event = None
+        data_lines = []
+        if not raw:
+            return None
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        if event_name == "response.completed" and isinstance(parsed, dict):
+            return parsed
+        return None
+
+    for line in body.splitlines():
+        if line == "":
+            result = _flush()
+            if result is not None:
+                return result
+            continue
+        if line.startswith(":"):
+            continue
+        if line.startswith("event:"):
+            current_event = line[len("event:") :].lstrip()
+            continue
+        if line.startswith("data:"):
+            data_lines.append(line[len("data:") :].lstrip())
+            continue
+
+    # Flush trailing frame.
+    return _flush()
 
 
 @lru_cache(maxsize=2)
@@ -88,8 +132,9 @@ async def create_openai_response(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         request_payload = dict(payload)
         if config.require_upstream_mode() == "codex":
-            # ChatGPT Codex backend requires store=false.
+            # ChatGPT Codex backend requires store=false and stream=true.
             request_payload.setdefault("store", False)
+            request_payload.setdefault("stream", True)
 
         response = await client.post(url, json=request_payload, headers=headers)
 
@@ -98,6 +143,12 @@ async def create_openai_response(payload: Dict[str, Any]) -> Dict[str, Any]:
             await _codex_manager().refresh_on_unauthorized(client)
             url, headers, _ = await _build_upstream_request(client)
             response = await client.post(url, json=request_payload, headers=headers)
+
+        content_type = response.headers.get("content-type", "")
+        if "text/event-stream" in content_type:
+            completed = _extract_completed_response_from_sse(response.text)
+            if completed is not None:
+                return completed
 
         if response.is_error:
             error_payload = _safe_json(response)
