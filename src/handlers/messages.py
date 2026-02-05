@@ -12,7 +12,7 @@ from asgi_correlation_id import correlation_id
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from src.config import MissingOpenAIAPIKeyError, resolve_openai_model
+from src.config import MissingUpstreamCredentialsError, resolve_openai_model
 from src.errors.anthropic_error import build_anthropic_error, map_openai_error_type
 from src.mapping.anthropic_to_openai import map_anthropic_request_to_openai
 from src.mapping.openai_stream_to_anthropic import translate_openai_events
@@ -145,12 +145,13 @@ async def create_message(http_request: Request, request: MessagesRequest) -> Any
         )
     try:
         response = await create_openai_response(payload)
-    except MissingOpenAIAPIKeyError:
-        openai_error = {"error": {"message": "OPENAI_API_KEY is required"}}
+    except MissingUpstreamCredentialsError as exc:
+        message = str(exc) or "Missing upstream credentials"
+        openai_error = {"error": {"message": message}}
         error_payload = build_anthropic_error(
             401,
             "authentication_error",
-            "OPENAI_API_KEY is required",
+            message,
             openai_error=openai_error,
         )
         if logging_enabled():
@@ -325,16 +326,16 @@ async def stream_messages(
             error_type = "client_disconnect"
             error_message = "stream cancelled"
             raise
-        except MissingOpenAIAPIKeyError:
+        except MissingUpstreamCredentialsError as exc:
             stream_failed = True
             error_status = 401
             error_type = "authentication_error"
-            error_message = "OPENAI_API_KEY is required"
-            openai_error = {"error": {"message": "OPENAI_API_KEY is required"}}
+            error_message = str(exc) or "Missing upstream credentials"
+            openai_error = {"error": {"message": error_message}}
             error_payload = build_anthropic_error(
                 401,
                 "authentication_error",
-                "OPENAI_API_KEY is required",
+                error_message,
                 openai_error=openai_error,
             )
             if logging_enabled():

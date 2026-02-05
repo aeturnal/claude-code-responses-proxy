@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+
+from functools import lru_cache
+from pathlib import Path
 
 import httpx
 from asgi_correlation_id import correlation_id
 import structlog
 
-from src.config import OPENAI_BASE_URL, require_openai_api_key
+from src import config
+from src.codex_auth import (
+    CodexAuthManager,
+    CodexAuthStore,
+    CodexTokenRefreshError,
+    MissingCodexCredentialsError,
+)
 from src.transport.lmstudio import (
     collapse_payload,
     is_lmstudio_base_url,
@@ -34,52 +43,91 @@ def _safe_json(response: httpx.Response) -> Any:
         return {"error": {"message": response.text}}
 
 
-async def create_openai_response(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """POST a Responses API payload and return the JSON response."""
-    api_key = require_openai_api_key()
-    url = f"{OPENAI_BASE_URL}/responses"
-    headers = {"Authorization": f"Bearer {api_key}"}
+@lru_cache(maxsize=2)
+def _codex_manager() -> CodexAuthManager:
+    path = (
+        Path(config.CODEX_AUTH_PATH).expanduser()
+        if config.CODEX_AUTH_PATH
+        else Path("~/.codex/auth.json").expanduser()
+    )
+    return CodexAuthManager(CodexAuthStore(path))
+
+
+async def _build_upstream_request(
+    client: httpx.AsyncClient,
+) -> tuple[str, dict[str, str], bool]:
+    """Return (url, headers, can_refresh_on_401)."""
+    mode = config.require_upstream_mode()
+    headers: dict[str, str] = {}
+
     upstream_correlation_id = correlation_id.get()
     if upstream_correlation_id:
         headers["X-Correlation-ID"] = upstream_correlation_id
 
+    if mode == "openai":
+        api_key = config.require_openai_api_key()
+        headers["Authorization"] = f"Bearer {api_key}"
+        return f"{config.OPENAI_BASE_URL}/responses", headers, False
+
+    # codex mode
+    try:
+        tokens = await _codex_manager().ensure_fresh(client)
+    except (MissingCodexCredentialsError, CodexTokenRefreshError) as exc:
+        raise config.MissingUpstreamCredentialsError(str(exc) or "Codex credentials missing") from exc
+
+    headers["Authorization"] = f"Bearer {tokens.access_token}"
+    if tokens.account_id:
+        headers["ChatGPT-Account-ID"] = tokens.account_id
+    return f"{config.CODEX_BASE_URL}/responses", headers, True
+
+
+async def create_openai_response(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """POST a Responses API payload and return the JSON response."""
     async with httpx.AsyncClient(timeout=300.0) as client:
+        url, headers, can_refresh = await _build_upstream_request(client)
         response = await client.post(url, json=payload, headers=headers)
 
-    if response.is_error:
-        error_payload = _safe_json(response)
-        if response.status_code == 400 and _is_invalid_input_union(error_payload):
-            if is_lmstudio_base_url():
-                fallback_payload = normalize_payload(payload)
-                if fallback_payload != payload:
-                    logger.info(
-                        "lmstudio_payload_normalized",
-                        endpoint="/v1/responses",
-                    )
-                    response = await client.post(
-                        url, json=fallback_payload, headers=headers
-                    )
-                    if not response.is_error:
-                        return response.json()
-                    error_payload = _safe_json(response)
-                collapsed_payload = collapse_payload(payload)
-                if (
-                    collapsed_payload != payload
-                    and collapsed_payload != fallback_payload
-                ):
-                    logger.info(
-                        "lmstudio_payload_collapsed",
-                        endpoint="/v1/responses",
-                    )
-                    response = await client.post(
-                        url, json=collapsed_payload, headers=headers
-                    )
-                    if not response.is_error:
-                        return response.json()
-                    error_payload = _safe_json(response)
-        raise OpenAIUpstreamError(response.status_code, error_payload)
+        if response.status_code == 401 and can_refresh:
+            # Retry once after a forced refresh.
+            await _codex_manager().refresh_on_unauthorized(client)
+            url, headers, _ = await _build_upstream_request(client)
+            response = await client.post(url, json=payload, headers=headers)
 
-    return response.json()
+        if response.is_error:
+            error_payload = _safe_json(response)
+            if response.status_code == 400 and _is_invalid_input_union(error_payload):
+                # LM Studio compatibility only applies when using an OpenAI-like base URL.
+                if is_lmstudio_base_url() and config.require_upstream_mode() == "openai":
+                    fallback_payload = normalize_payload(payload)
+                    if fallback_payload != payload:
+                        logger.info(
+                            "lmstudio_payload_normalized",
+                            endpoint="/v1/responses",
+                        )
+                        response = await client.post(
+                            url, json=fallback_payload, headers=headers
+                        )
+                        if not response.is_error:
+                            return response.json()
+                        error_payload = _safe_json(response)
+                    collapsed_payload = collapse_payload(payload)
+                    if (
+                        collapsed_payload != payload
+                        and collapsed_payload != fallback_payload
+                    ):
+                        logger.info(
+                            "lmstudio_payload_collapsed",
+                            endpoint="/v1/responses",
+                        )
+                        response = await client.post(
+                            url, json=collapsed_payload, headers=headers
+                        )
+                        if not response.is_error:
+                            return response.json()
+                        error_payload = _safe_json(response)
+            raise OpenAIUpstreamError(response.status_code, error_payload)
+
+        return response.json()
 
 
 def _is_invalid_input_union(error_payload: Any) -> bool:

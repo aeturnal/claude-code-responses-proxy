@@ -12,6 +12,15 @@ import structlog
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
 
+# Upstream mode:
+# - openai: use OPENAI_API_KEY against OPENAI_BASE_URL (default https://api.openai.com/v1)
+# - codex: use ChatGPT/Codex credentials from ~/.codex/auth.json against chatgpt.com backend
+OPENAI_UPSTREAM_MODE = os.getenv("OPENAI_UPSTREAM_MODE", "openai").strip().lower()
+CODEX_BASE_URL = os.getenv(
+    "CODEX_BASE_URL", "https://chatgpt.com/backend-api/codex"
+).rstrip("/")
+CODEX_AUTH_PATH = os.getenv("CODEX_AUTH_PATH")
+
 logger = structlog.get_logger(__name__)
 
 
@@ -37,15 +46,29 @@ ANTHROPIC_TELEMETRY_LOG_FILE = os.getenv(
 )
 
 
-class MissingOpenAIAPIKeyError(ValueError):
-    """Raised when the OpenAI API key is missing."""
+class MissingUpstreamCredentialsError(ValueError):
+    """Raised when upstream credentials are missing."""
 
 
 def require_openai_api_key() -> str:
-    """Return the API key or raise if missing."""
+    """Return the API key or raise if missing.
+
+    Note: Prefer require_upstream_mode() + require_openai_api_key() for new code.
+    """
     if not OPENAI_API_KEY:
-        raise MissingOpenAIAPIKeyError("OPENAI_API_KEY is required")
+        raise MissingUpstreamCredentialsError("OPENAI_API_KEY is required")
     return OPENAI_API_KEY
+
+
+def require_upstream_mode() -> str:
+    mode = (OPENAI_UPSTREAM_MODE or "openai").strip().lower()
+    if mode not in {"openai", "codex"}:
+        raise ValueError(
+            "OPENAI_UPSTREAM_MODE must be 'openai' or 'codex' (got "
+            + repr(OPENAI_UPSTREAM_MODE)
+            + ")"
+        )
+    return mode
 
 
 def get_openai_default_model() -> str:
