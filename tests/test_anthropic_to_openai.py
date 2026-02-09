@@ -1,4 +1,3 @@
-from src.mapping.anthropic_to_openai import map_anthropic_request_to_openai
 import json
 
 from src.mapping.anthropic_to_openai import map_anthropic_request_to_openai

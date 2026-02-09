@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Iterable, List, Literal, Optional, Union, cast
+from typing import List, Literal, Optional, Union, cast
 
 from src.config import resolve_openai_model
 from src.schema.anthropic import (

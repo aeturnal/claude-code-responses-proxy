@@ -3,23 +3,19 @@
 from __future__ import annotations
 
 import json
-from functools import lru_cache
-from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import httpx
-from asgi_correlation_id import correlation_id
-
-from src.codex_auth import (
-    CodexAuthManager,
-    CodexAuthStore,
-    CodexTokenRefreshError,
-    MissingCodexCredentialsError,
-)
 from src import config
 from src.observability.logging import get_stream_logger, streaming_logging_enabled
 from src.transport.lmstudio import collapse_payload, is_lmstudio_base_url, normalize_payload
 from src.transport.openai_client import OpenAIUpstreamError
+from src.transport.upstream_common import (
+    build_upstream_request as _build_upstream_request,
+    get_codex_manager as _codex_manager,
+    is_invalid_input_union as _is_invalid_input_union,
+    rewrite_codex_message_span_types as _rewrite_codex_message_span_types,
+)
 
 
 def _safe_json(response: httpx.Response) -> Any:
@@ -37,43 +33,6 @@ def _parse_data(data_lines: List[str]) -> Any:
         return json.loads(raw)
     except json.JSONDecodeError:
         return raw
-
-
-@lru_cache(maxsize=2)
-def _codex_manager() -> CodexAuthManager:
-    path = (
-        Path(config.CODEX_AUTH_PATH).expanduser()
-        if config.CODEX_AUTH_PATH
-        else Path("~/.codex/auth.json").expanduser()
-    )
-    return CodexAuthManager(CodexAuthStore(path))
-
-
-async def _build_upstream_request(
-    client: httpx.AsyncClient,
-) -> tuple[str, dict[str, str], bool]:
-    """Return (url, headers, can_refresh_on_401)."""
-    mode = config.require_upstream_mode()
-    headers: dict[str, str] = {}
-
-    upstream_correlation_id = correlation_id.get()
-    if upstream_correlation_id:
-        headers["X-Correlation-ID"] = upstream_correlation_id
-
-    if mode == "openai":
-        api_key = config.require_openai_api_key()
-        headers["Authorization"] = f"Bearer {api_key}"
-        return f"{config.OPENAI_BASE_URL}/responses", headers, False
-
-    try:
-        tokens = await _codex_manager().ensure_fresh(client)
-    except (MissingCodexCredentialsError, CodexTokenRefreshError) as exc:
-        raise config.MissingUpstreamCredentialsError(str(exc) or "Codex credentials missing") from exc
-
-    headers["Authorization"] = f"Bearer {tokens.access_token}"
-    if tokens.account_id:
-        headers["ChatGPT-Account-ID"] = tokens.account_id
-    return f"{config.CODEX_BASE_URL}/responses", headers, True
 
 
 async def stream_openai_events(
@@ -100,7 +59,7 @@ async def stream_openai_events(
             payload["instructions"] = config.CODEX_DEFAULT_INSTRUCTIONS
 
         # ChatGPT Codex backend expects assistant history spans to use output_text.
-        _codex_rewrite_message_span_types(payload)
+        _rewrite_codex_message_span_types(payload)
 
     current_event: Optional[str] = None
     data_lines: List[str] = []
@@ -232,38 +191,3 @@ async def stream_openai_events(
                 return
             raise
 
-
-def _codex_rewrite_message_span_types(payload: Dict[str, Any]) -> None:
-    input_items = payload.get("input")
-    if not isinstance(input_items, list):
-        return
-
-    for item in input_items:
-        if not isinstance(item, dict):
-            continue
-        if item.get("type") != "message":
-            continue
-        role = item.get("role")
-        if role != "assistant":
-            continue
-        content = item.get("content")
-        if not isinstance(content, list):
-            continue
-        for span in content:
-            if not isinstance(span, dict):
-                continue
-            if span.get("type") == "input_text":
-                span["type"] = "output_text"
-
-
-def _is_invalid_input_union(error_payload: Any) -> bool:
-    if not isinstance(error_payload, dict):
-        return False
-    error = error_payload.get("error")
-    if not isinstance(error, dict):
-        return False
-    if error.get("param") != "input":
-        return False
-    if error.get("code") != "invalid_union":
-        return False
-    return True

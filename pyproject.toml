@@ -1,7 +1,7 @@
 [project]
 name = "claude-code-responses-proxy"
 version = "0.1.0"
-description = "Add your description here"
+description = "FastAPI proxy translating Anthropic Messages API calls to OpenAI Responses API"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+from urllib.parse import urlparse
 
 import httpx
 
@@ -26,6 +27,7 @@ TOKEN_REFRESH_INTERVAL_DAYS = 8
 CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 DEFAULT_REFRESH_TOKEN_URL = "https://auth.openai.com/oauth/token"
 REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR = "CODEX_REFRESH_TOKEN_URL_OVERRIDE"
+ALLOWED_REFRESH_TOKEN_HOSTS = {"auth.openai.com", "localhost", "127.0.0.1", "::1"}
 
 
 class MissingCodexCredentialsError(ValueError):
@@ -77,7 +79,24 @@ def _format_dt(dt: datetime) -> str:
 
 
 def _refresh_token_endpoint() -> str:
-    return os.getenv(REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR, DEFAULT_REFRESH_TOKEN_URL).strip()
+    endpoint = os.getenv(
+        REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR, DEFAULT_REFRESH_TOKEN_URL
+    ).strip()
+    parsed = urlparse(endpoint)
+    host = (parsed.hostname or "").lower()
+    scheme = (parsed.scheme or "").lower()
+
+    if host not in ALLOWED_REFRESH_TOKEN_HOSTS:
+        raise ValueError(
+            "Refresh token endpoint host is not allowed. "
+            f"Allowed hosts: {sorted(ALLOWED_REFRESH_TOKEN_HOSTS)}"
+        )
+    if host == "auth.openai.com" and scheme != "https":
+        raise ValueError("Refresh token endpoint for auth.openai.com must use https")
+    if host != "auth.openai.com" and scheme not in {"http", "https"}:
+        raise ValueError("Refresh token endpoint must use http or https")
+
+    return endpoint
 
 
 class CodexAuthStore:
@@ -181,7 +200,10 @@ class CodexAuthManager:
     async def _refresh_and_persist(
         self, client: httpx.AsyncClient, tokens: CodexTokens, raw: Dict[str, Any]
     ) -> CodexTokens:
-        endpoint = _refresh_token_endpoint()
+        try:
+            endpoint = _refresh_token_endpoint()
+        except ValueError as exc:
+            raise CodexTokenRefreshError(str(exc)) from exc
         payload = {
             "client_id": CLIENT_ID,
             "grant_type": "refresh_token",
