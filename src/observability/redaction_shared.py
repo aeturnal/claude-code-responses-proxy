@@ -35,12 +35,12 @@ def get_presidio_engines() -> Tuple[Optional[Any], Optional[Any]]:
     try:
         from presidio_analyzer import AnalyzerEngine
         from presidio_anonymizer import AnonymizerEngine
-    except BaseException as exc:  # pragma: no cover - defensive fallback
+    except Exception as exc:  # pragma: no cover - defensive fallback
         logger.warning("presidio_import_failed", error=str(exc))
         return None, None
     try:
         return AnalyzerEngine(), AnonymizerEngine()
-    except BaseException as exc:  # pragma: no cover - defensive fallback
+    except Exception as exc:  # pragma: no cover - defensive fallback
         logger.warning("presidio_init_failed", error=str(exc))
         return None, None
 
@@ -81,7 +81,7 @@ def redact_text(text: Any, mode: Optional[str] = None) -> Any:
             },
         )
         return anonymized.text
-    except BaseException:
+    except Exception:
         return REDACTION_TOKEN
 
 
