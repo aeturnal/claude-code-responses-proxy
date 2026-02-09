@@ -20,6 +20,11 @@ Install dependencies using [uv](https://docs.astral.sh/uv/):
 uv sync
 ```
 
+Optional extras:
+
+- `uv sync --extra dev` installs test dependencies.
+- `uv sync --extra pii` installs Presidio/spaCy dependencies for partial PII redaction mode.
+
 Run the API (OpenAI Platform API key mode):
 
 ```bash
@@ -227,6 +232,12 @@ Caution: `OBS_REDACTION_MODE=none` will log prompts and outputs in plaintext.
 
 ### Installing spaCy models (optional)
 
+If you enabled the `pii` extra:
+
+```bash
+uv sync --extra pii
+```
+
 For partial PII (Personally Identifiable Information) redaction (`OBS_REDACTION_MODE=partial`), you need a spaCy language model:
 
 ```bash
@@ -236,6 +247,12 @@ uv run python -m spacy download en_core_web_sm
 The proxy works without a model installed; it falls back to full redaction if Presidio cannot initialize.
 
 ## Development
+
+Install dev dependencies:
+
+```bash
+uv sync --extra dev
+```
 
 Run tests:
 
