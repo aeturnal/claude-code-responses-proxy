@@ -25,6 +25,13 @@ Optional extras:
 - `uv sync --extra dev` installs test dependencies.
 - `uv sync --extra pii` installs Presidio/spaCy dependencies for partial PII redaction mode.
 
+### Install Modes
+
+- Base runtime: `uv sync`
+- Runtime + tests: `uv sync --extra dev`
+- Runtime + partial-PII redaction support: `uv sync --extra pii`
+- Runtime + tests + partial-PII redaction support: `uv sync --extra dev --extra pii`
+
 Run the API (OpenAI Platform API key mode):
 
 ```bash
