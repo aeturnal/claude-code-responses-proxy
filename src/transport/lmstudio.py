@@ -109,3 +109,18 @@ def collapse_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         }
     ]
     return collapsed
+
+
+def fallback_payload_candidates(payload: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
+    """Return ordered LM Studio compatibility fallback payloads."""
+    candidates: List[Tuple[str, Dict[str, Any]]] = []
+
+    normalized = normalize_payload(payload)
+    if normalized != payload:
+        candidates.append(("normalized", normalized))
+
+    collapsed = collapse_payload(payload)
+    if collapsed != payload and all(collapsed != existing for _, existing in candidates):
+        candidates.append(("collapsed", collapsed))
+
+    return candidates

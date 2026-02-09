@@ -8,7 +8,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 import httpx
 from src import config
 from src.observability.logging import get_stream_logger, streaming_logging_enabled
-from src.transport.lmstudio import collapse_payload, is_lmstudio_base_url, normalize_payload
+from src.transport.lmstudio import fallback_payload_candidates, is_lmstudio_base_url
 from src.transport.openai_client import OpenAIUpstreamError
 from src.transport.upstream_common import (
     build_upstream_request as _build_upstream_request,
@@ -139,11 +139,10 @@ async def stream_openai_events(
                     and _is_invalid_input_union(exc.error_payload)
                     and is_lmstudio_base_url()
                 ):
-                    fallback_payload = normalize_payload(payload)
-                    if fallback_payload != payload:
+                    for label, fallback_payload in fallback_payload_candidates(payload):
                         if stream_logger:
                             stream_logger.info(
-                                "lmstudio_payload_normalized",
+                                f"lmstudio_payload_{label}",
                                 endpoint="/v1/messages/stream",
                                 upstream_url=url,
                                 correlation_id=upstream_correlation_id,
@@ -159,23 +158,6 @@ async def stream_openai_events(
                         except OpenAIUpstreamError as exc2:
                             exc = exc2
 
-                    collapsed_payload = collapse_payload(payload)
-                    if collapsed_payload != payload and collapsed_payload != fallback_payload:
-                        if stream_logger:
-                            stream_logger.info(
-                                "lmstudio_payload_collapsed",
-                                endpoint="/v1/messages/stream",
-                                upstream_url=url,
-                                correlation_id=upstream_correlation_id,
-                            )
-                        current_event = None
-                        data_lines = []
-                        async for event in _connect_and_stream(
-                            client, url, headers, collapsed_payload
-                        ):
-                            yield event
-                        return
-
                 raise
 
         # Codex mode: retry once on 401 after refresh.
@@ -190,4 +172,3 @@ async def stream_openai_events(
                     yield event
                 return
             raise
-

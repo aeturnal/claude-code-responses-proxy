@@ -11,9 +11,8 @@ import structlog
 
 from src import config
 from src.transport.lmstudio import (
-    collapse_payload,
+    fallback_payload_candidates,
     is_lmstudio_base_url,
-    normalize_payload,
 )
 from src.transport.upstream_common import (
     build_upstream_request as _build_upstream_request,
@@ -130,29 +129,13 @@ async def create_openai_response(payload: Dict[str, Any]) -> Dict[str, Any]:
             if response.status_code == 400 and _is_invalid_input_union(error_payload):
                 # LM Studio compatibility only applies when using an OpenAI-like base URL.
                 if is_lmstudio_base_url() and config.require_upstream_mode() == "openai":
-                    fallback_payload = normalize_payload(payload)
-                    if fallback_payload != payload:
+                    for label, fallback_payload in fallback_payload_candidates(payload):
                         logger.info(
-                            "lmstudio_payload_normalized",
+                            f"lmstudio_payload_{label}",
                             endpoint="/v1/responses",
                         )
                         response = await client.post(
                             url, json=fallback_payload, headers=headers
-                        )
-                        if not response.is_error:
-                            return response.json()
-                        error_payload = _safe_json(response)
-                    collapsed_payload = collapse_payload(payload)
-                    if (
-                        collapsed_payload != payload
-                        and collapsed_payload != fallback_payload
-                    ):
-                        logger.info(
-                            "lmstudio_payload_collapsed",
-                            endpoint="/v1/responses",
-                        )
-                        response = await client.post(
-                            url, json=collapsed_payload, headers=headers
                         )
                         if not response.is_error:
                             return response.json()
