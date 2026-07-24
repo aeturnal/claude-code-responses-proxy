@@ -17,6 +17,8 @@ from src.observability.logging import configure_logging, logging_enabled
 
 app = FastAPI()
 logger = structlog.get_logger(__name__)
+MAX_VALIDATION_ERRORS = 10
+MAX_VALIDATION_MESSAGE_LENGTH = 200
 configure_logging()
 app.add_middleware(CorrelationIdMiddleware, header_name="X-Correlation-ID")
 app.add_middleware(ObservabilityMiddleware)
@@ -24,15 +26,24 @@ app.add_middleware(ObservabilityMiddleware)
 
 def summarize_validation_errors(
     errors: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    return [
-        {
-            "loc": list(error.get("loc", ())),
-            "msg": error.get("msg", "Invalid request"),
-            "type": error.get("type", "value_error"),
-        }
-        for error in errors
-    ]
+) -> dict[str, object]:
+    retained_errors: list[dict[str, object]] = []
+    for error in errors[:MAX_VALIDATION_ERRORS]:
+        message = error.get("msg", "Invalid request")
+        if not isinstance(message, str):
+            message = "Invalid request"
+        retained_errors.append(
+            {
+                "loc": list(error.get("loc", ())),
+                "msg": message[:MAX_VALIDATION_MESSAGE_LENGTH],
+                "type": error.get("type", "value_error"),
+            }
+        )
+    return {
+        "total_count": len(errors),
+        "omitted_count": max(0, len(errors) - len(retained_errors)),
+        "errors": retained_errors,
+    }
 
 
 @app.exception_handler(RequestValidationError)

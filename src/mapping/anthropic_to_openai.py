@@ -37,18 +37,41 @@ from src.schema.openai import (
 )
 
 
-def _map_reasoning(request: MessagesRequest) -> ReasoningConfig:
+GPT_5_6_REASONING_MODELS = (
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+)
+
+
+def _supports_gpt_5_6_reasoning(model: str) -> bool:
+    return model in GPT_5_6_REASONING_MODELS
+
+
+def _map_reasoning(
+    request: MessagesRequest,
+    openai_model: str,
+) -> ReasoningConfig | None:
     if request.thinking and request.thinking.type == "enabled":
         raise AnthropicCompatibilityError(
             "thinking.type 'enabled' with budget_tokens cannot be translated "
             "to OpenAI reasoning effort",
             param="thinking",
         )
+    if not _supports_gpt_5_6_reasoning(openai_model):
+        return None
     if request.thinking and request.thinking.type == "disabled":
         return ReasoningConfig(effort="none")
     if request.output_config and request.output_config.effort:
         return ReasoningConfig(effort=request.output_config.effort)
-    return ReasoningConfig(effort=get_openai_default_reasoning_effort())
+    try:
+        effort = get_openai_default_reasoning_effort()
+    except ValueError as exc:
+        raise AnthropicCompatibilityError(
+            str(exc),
+            param="OPENAI_DEFAULT_REASONING_EFFORT",
+        ) from exc
+    return ReasoningConfig(effort=effort)
 
 
 def _system_to_instructions(
@@ -278,8 +301,9 @@ def map_anthropic_request_to_openai(request: MessagesRequest) -> OpenAIResponses
     if request.max_tokens is not None and request.max_tokens >= 16:
         max_output_tokens = request.max_tokens
 
+    openai_model = resolve_openai_model(request.model)
     payload = OpenAIResponsesRequest(
-        model=resolve_openai_model(request.model),
+        model=openai_model,
         instructions=instructions,
         input=input_items,
         tools=tools,
@@ -287,6 +311,6 @@ def map_anthropic_request_to_openai(request: MessagesRequest) -> OpenAIResponses
         max_output_tokens=max_output_tokens,
         max_tool_calls=max_tool_calls,
         include=include,
-        reasoning=_map_reasoning(request),
+        reasoning=_map_reasoning(request, openai_model),
     )
     return payload

@@ -75,9 +75,9 @@ def test_output_config_effort_maps_to_responses_reasoning() -> None:
 def test_omitted_reasoning_uses_configured_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OPENAI_DEFAULT_REASONING_EFFORT", "high")
+    monkeypatch.setenv("OPENAI_DEFAULT_REASONING_EFFORT", " high ")
     request = MessagesRequest(
-        model="claude-haiku-4-5-20251001",
+        model="claude-sonnet-5",
         messages=[Message(role="user", content="Hi")],
     )
 
@@ -92,7 +92,7 @@ def test_omitted_reasoning_defaults_to_medium(
 ) -> None:
     monkeypatch.delenv("OPENAI_DEFAULT_REASONING_EFFORT", raising=False)
     request = MessagesRequest(
-        model="claude-haiku-4-5-20251001",
+        model="claude-sonnet-5",
         messages=[Message(role="user", content="Hi")],
     )
 
@@ -102,9 +102,43 @@ def test_omitted_reasoning_defaults_to_medium(
     assert mapped.reasoning.effort == "medium"
 
 
+def test_omitted_reasoning_is_not_sent_to_non_gpt_5_6_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MODEL_MAP_JSON", '{"claude-sonnet-5": "gpt-4o"}')
+    request = MessagesRequest(
+        model="claude-sonnet-5",
+        messages=[Message(role="user", content="Hi")],
+    )
+
+    mapped = map_anthropic_request_to_openai(request)
+
+    assert mapped.model == "gpt-4o"
+    assert mapped.reasoning is None
+
+
+def test_reasoning_is_not_sent_to_gpt_5_6_lookalike_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "MODEL_MAP_JSON",
+        '{"claude-sonnet-5": "gpt-5.6-sol-custom"}',
+    )
+    request = MessagesRequest(
+        model="claude-sonnet-5",
+        messages=[Message(role="user", content="Hi")],
+        output_config=OutputConfig(effort="max"),
+    )
+
+    mapped = map_anthropic_request_to_openai(request)
+
+    assert mapped.model == "gpt-5.6-sol-custom"
+    assert mapped.reasoning is None
+
+
 def test_disabled_thinking_maps_to_none_reasoning() -> None:
     request = MessagesRequest(
-        model="claude-haiku-4-5-20251001",
+        model="claude-sonnet-5",
         messages=[Message(role="user", content="Hi")],
         thinking=ThinkingConfig(type="disabled"),
     )

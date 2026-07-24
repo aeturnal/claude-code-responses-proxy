@@ -58,6 +58,15 @@ DEFAULT_GPT_5_6_MODEL_MAP = {
     "claude-haiku-4-5": "gpt-5.6-luna",
 }
 
+ALLOWED_OPENAI_REASONING_EFFORTS = {
+    "none",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+}
+
 
 class MissingUpstreamCredentialsError(ValueError):
     """Raised when upstream credentials are missing."""
@@ -89,7 +98,13 @@ def get_openai_default_model() -> str:
 
 
 def get_openai_default_reasoning_effort() -> str:
-    return os.getenv("OPENAI_DEFAULT_REASONING_EFFORT", "medium")
+    effort = os.getenv("OPENAI_DEFAULT_REASONING_EFFORT", "medium").strip().lower()
+    if effort not in ALLOWED_OPENAI_REASONING_EFFORTS:
+        allowed = ", ".join(sorted(ALLOWED_OPENAI_REASONING_EFFORTS))
+        raise ValueError(
+            "OPENAI_DEFAULT_REASONING_EFFORT must be one of: " + allowed
+        )
+    return effort
 
 
 @lru_cache(maxsize=16)
@@ -106,21 +121,21 @@ def _parse_model_map(raw: str | None) -> Dict[str, str]:
     return normalized_map
 
 
-def _load_model_map() -> Dict[str, str]:
-    operator_map = _parse_model_map(os.getenv("MODEL_MAP_JSON"))
-    return {**DEFAULT_GPT_5_6_MODEL_MAP, **operator_map}
-
-
 def _clear_model_map_cache_for_tests() -> None:
     _parse_model_map.cache_clear()
 
 
 def resolve_openai_model(anthropic_model: Any) -> str:
     """Resolve an Anthropic model name to an OpenAI model name."""
-    model_map = _load_model_map()
+    operator_map = _parse_model_map(os.getenv("MODEL_MAP_JSON"))
     resolved, match_type, normalized_request = resolve_model_from_map(
-        anthropic_model, model_map
+        anthropic_model, operator_map
     )
+
+    if resolved is None:
+        resolved, match_type, normalized_request = resolve_model_from_map(
+            anthropic_model, DEFAULT_GPT_5_6_MODEL_MAP
+        )
 
     if resolved is None:
         resolved = get_openai_default_model()

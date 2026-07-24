@@ -33,6 +33,13 @@ def test_operator_model_map_overrides_current_family_default(monkeypatch):
     assert resolve_openai_model("claude-sonnet-5") == "gpt-5.6-sol"
 
 
+def test_operator_prefix_overrides_more_specific_builtin_route(monkeypatch):
+    monkeypatch.setenv("MODEL_MAP_JSON", '{"claude": "operator-model"}')
+    _clear_model_map_cache_for_tests()
+
+    assert resolve_openai_model("claude-sonnet-5-20260724") == "operator-model"
+
+
 def test_unknown_model_defaults_to_terra(monkeypatch):
     monkeypatch.delenv("MODEL_MAP_JSON", raising=False)
     monkeypatch.delenv("OPENAI_DEFAULT_MODEL", raising=False)

@@ -148,20 +148,24 @@ Built-in routes for current Claude model identifiers:
 }
 ```
 
-Keys are normalized (trimmed + casefolded). If there is no exact match, the resolver can use an unambiguous prefix match; otherwise it falls back to `OPENAI_DEFAULT_MODEL`. `MODEL_MAP_JSON` takes precedence over the built-in current-family routes.
+Keys are normalized (trimmed + casefolded). If there is no exact match, the resolver can use an unambiguous prefix match; otherwise it falls back to `OPENAI_DEFAULT_MODEL`. The complete `MODEL_MAP_JSON` map is resolved before built-in current-family routes, so an operator prefix takes precedence over a more-specific built-in prefix.
 
 ### Reasoning controls
 
 Claude `output_config.effort` values (`low`, `medium`, `high`, `xhigh`, and
 `max`) map directly to OpenAI Responses `reasoning.effort`. When no Claude
 reasoning control is supplied, the proxy uses
-`OPENAI_DEFAULT_REASONING_EFFORT`, which defaults to `medium`.
+`OPENAI_DEFAULT_REASONING_EFFORT`, which defaults to `medium`. This value is
+trimmed, normalized to lowercase, and must be one of `none`, `low`, `medium`,
+`high`, `xhigh`, or `max`.
 
 `thinking.type=disabled` maps to `reasoning.effort=none`. Legacy manual
 thinking requests with `thinking.type=enabled` and `budget_tokens` return a
 compatibility error because a token budget cannot be translated safely to an
 OpenAI reasoning effort. OpenAI reasoning is not returned as Anthropic
-thinking blocks.
+thinking blocks. Reasoning is sent only for the supported GPT-5.6 routing
+targets (`gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`); non-GPT-5.6
+operator overrides omit it.
 
 Example current-family override configuration:
 
