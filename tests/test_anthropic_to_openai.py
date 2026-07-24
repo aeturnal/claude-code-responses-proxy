@@ -48,17 +48,71 @@ def test_developer_role_is_preserved() -> None:
     assert mapped.input[0].role == "developer"
 
 
-def test_system_role_is_preserved() -> None:
+def test_in_band_system_string_merges_with_top_level_instructions_and_is_omitted() -> None:
     req = MessagesRequest(
         model="claude-test",
-        messages=[Message(role="system", content="hi")],
+        system="Top-level instruction",
+        messages=[
+            Message(role="system", content="In-band instruction"),
+            Message(role="user", content="hi"),
+        ],
         max_tokens=10,
     )
 
     mapped = map_anthropic_request_to_openai(req)
 
-    assert mapped.input[0].type == "message"
-    assert mapped.input[0].role == "system"
+    assert mapped.instructions == "Top-level instruction\nIn-band instruction"
+    assert all(
+        not isinstance(item, InputMessageItem) or item.role != "system"
+        for item in mapped.input
+    )
+    assert isinstance(mapped.input[0], InputMessageItem)
+    assert mapped.input[0].role == "user"
+
+
+def test_in_band_system_text_blocks_become_instructions() -> None:
+    req = MessagesRequest(
+        model="claude-test",
+        messages=[
+            Message(
+                role="system",
+                content=[TextBlock(text="First"), TextBlock(text="Second")],
+            ),
+        ],
+        max_tokens=10,
+    )
+
+    mapped = map_anthropic_request_to_openai(req)
+
+    assert mapped.instructions == "First\nSecond"
+    assert mapped.input == []
+
+
+def test_multiple_in_band_system_messages_preserve_order_without_empty_delimiters() -> None:
+    req = MessagesRequest(
+        model="claude-test",
+        system="Top-level instruction",
+        messages=[
+            Message(role="system", content="First in-band instruction"),
+            Message(role="system", content=""),
+            Message(role="system", content=[TextBlock(text="Second in-band instruction")]),
+            Message(role="system", content=""),
+            Message(role="user", content="hi"),
+        ],
+        max_tokens=10,
+    )
+
+    mapped = map_anthropic_request_to_openai(req)
+
+    assert mapped.instructions == (
+        "Top-level instruction\n"
+        "First in-band instruction\n"
+        "Second in-band instruction"
+    )
+    assert all(
+        not isinstance(item, InputMessageItem) or item.role != "system"
+        for item in mapped.input
+    )
 
 
 def test_max_output_tokens_omitted_below_minimum() -> None:

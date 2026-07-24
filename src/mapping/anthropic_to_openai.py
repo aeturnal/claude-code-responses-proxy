@@ -91,6 +91,28 @@ def _system_to_instructions(
     return "\n".join(instructions)
 
 
+def _merge_instructions(
+    existing_instructions: Optional[str],
+    additional_instructions: Optional[str],
+) -> Optional[str]:
+    if not existing_instructions:
+        return additional_instructions
+    if not additional_instructions:
+        return existing_instructions
+    return f"{existing_instructions}\n{additional_instructions}"
+
+
+def _system_message_to_instructions(message: Message) -> Optional[str]:
+    if isinstance(message.content, str):
+        return message.content
+    if any(not isinstance(block, TextBlock) for block in message.content):
+        raise AnthropicCompatibilityError(
+            "In-band system messages support only text blocks",
+            param="messages",
+        )
+    return _system_to_instructions(cast(List[TextBlock], message.content))
+
+
 def _safe_json_dumps(value: object) -> str:
     try:
         return json.dumps(value, ensure_ascii=False)
@@ -239,6 +261,12 @@ def map_anthropic_request_to_openai(request: MessagesRequest) -> OpenAIResponses
     instructions = _system_to_instructions(request.system)
     input_items: List[InputItem] = []
     for message in request.messages:
+        if message.role == "system":
+            instructions = _merge_instructions(
+                instructions,
+                _system_message_to_instructions(message),
+            )
+            continue
         input_items.extend(_message_to_input_items(message))
     tools: Optional[List[ResponseTool]] = None
     include: Optional[List[str]] = None
