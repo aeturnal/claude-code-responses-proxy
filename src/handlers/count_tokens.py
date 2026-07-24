@@ -10,7 +10,11 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from src.config import resolve_openai_model
-from src.errors.anthropic_error import build_anthropic_error
+from src.errors.anthropic_error import (
+    AnthropicCompatibilityError,
+    build_anthropic_error,
+)
+from src.handlers.messages_common import build_compatibility_error
 from src.mapping.anthropic_to_openai import map_anthropic_request_to_openai
 from src.observability.logging import logging_enabled
 from src.observability.redaction import (
@@ -63,6 +67,20 @@ async def count_tokens(http_request: Request, request: MessagesRequest):
     try:
         openai_request = map_anthropic_request_to_openai(request)
         input_tokens = count_openai_request_tokens(openai_request)
+    except AnthropicCompatibilityError as exc:
+        status_code, error_payload, error_source = build_compatibility_error(exc)
+        if logging_enabled():
+            logger.info(
+                "error",
+                endpoint=str(http_request.url.path),
+                status_code=status_code,
+                duration_ms=_duration_ms(http_request),
+                correlation_id=correlation_id_value,
+                model_anthropic=model_anthropic,
+                model_openai=model_openai,
+                payload=redact_openai_error(error_source),
+            )
+        return JSONResponse(status_code=status_code, content=error_payload)
     except ValueError as exc:
         error_payload = build_anthropic_error(
             400,

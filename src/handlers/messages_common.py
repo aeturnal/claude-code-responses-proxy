@@ -11,7 +11,11 @@ from asgi_correlation_id import correlation_id
 from fastapi import Request
 
 from src.config import resolve_openai_model
-from src.errors.anthropic_error import build_anthropic_error, map_openai_error_type
+from src.errors.anthropic_error import (
+    AnthropicCompatibilityError,
+    build_anthropic_error,
+    map_openai_error_type,
+)
 from src.observability.logging import logging_enabled
 from src.observability.redaction import (
     redact_generic_payload,
@@ -205,6 +209,23 @@ def build_missing_credentials_error(exc: Exception) -> tuple[int, Dict[str, Any]
         openai_error=openai_error,
     )
     return 401, error_payload, openai_error
+
+
+def build_compatibility_error(
+    exc: AnthropicCompatibilityError,
+) -> tuple[int, Dict[str, Any], Dict[str, Any]]:
+    source = {"error": {"type": "invalid_request_error", "message": str(exc)}}
+    return (
+        400,
+        build_anthropic_error(
+            400,
+            "invalid_request_error",
+            str(exc),
+            param=exc.param,
+            openai_error=source,
+        ),
+        source,
+    )
 
 
 def build_upstream_error(exc: OpenAIUpstreamError) -> tuple[int, Dict[str, Any], Dict[str, Any]]:

@@ -11,7 +11,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.config import MissingUpstreamCredentialsError
+from src.errors.anthropic_error import AnthropicCompatibilityError
 from src.handlers.messages_common import (
+    build_compatibility_error,
     build_missing_credentials_error,
     build_upstream_error,
     format_sse_error,
@@ -50,7 +52,12 @@ async def create_message(http_request: Request, request: MessagesRequest) -> Any
 
     context = prepare_request_context(logger, http_request, request)
 
-    openai_request = map_anthropic_request_to_openai(request)
+    try:
+        openai_request = map_anthropic_request_to_openai(request)
+    except AnthropicCompatibilityError as exc:
+        status_code, error_payload, error_source = build_compatibility_error(exc)
+        log_error(logger, http_request, context, status_code, error_source)
+        return JSONResponse(status_code=status_code, content=error_payload)
     payload = normalize_openai_payload(openai_request)
     log_upstream_request(logger, http_request, context, payload)
     try:
@@ -100,18 +107,6 @@ async def stream_messages(
             payload_summary=context.payload_summary,
         )
 
-    openai_request = map_anthropic_request_to_openai(request)
-    payload = normalize_openai_payload(openai_request)
-    payload["stream"] = True
-    log_upstream_request(logger, http_request, context, payload)
-    initial_usage: Optional[Dict[str, Any]] = None
-    try:
-        input_tokens = count_openai_request_tokens(payload)
-    except ValueError:
-        input_tokens = None
-    if isinstance(input_tokens, int):
-        initial_usage = {"input_tokens": input_tokens, "output_tokens": 0}
-
     async def event_stream() -> AsyncIterator[str]:
         latest_usage: Optional[Dict[str, Any]] = None
         stream_failed = False
@@ -132,6 +127,17 @@ async def stream_messages(
                 model_openai=context.model_openai,
             )
         try:
+            openai_request = map_anthropic_request_to_openai(request)
+            payload = normalize_openai_payload(openai_request)
+            payload["stream"] = True
+            log_upstream_request(logger, http_request, context, payload)
+            initial_usage: Optional[Dict[str, Any]] = None
+            try:
+                input_tokens = count_openai_request_tokens(payload)
+            except ValueError:
+                input_tokens = None
+            if isinstance(input_tokens, int):
+                initial_usage = {"input_tokens": input_tokens, "output_tokens": 0}
             openai_events = stream_openai_events(payload)
             async for sse_event in translate_openai_events(
                 openai_events,
@@ -159,6 +165,14 @@ async def stream_messages(
             error_type = "client_disconnect"
             error_message = "stream cancelled"
             raise
+        except AnthropicCompatibilityError as exc:
+            stream_failed = True
+            status_code, error_payload, error_source = build_compatibility_error(exc)
+            error_status = status_code
+            error_type = "invalid_request_error"
+            error_message = str(exc)
+            log_error(logger, http_request, context, status_code, error_source)
+            yield format_sse_error(error_payload)
         except MissingUpstreamCredentialsError as exc:
             stream_failed = True
             error_status = 401
