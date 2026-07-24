@@ -7,6 +7,39 @@ from src.config import (
 )
 
 
+@pytest.mark.parametrize(
+    ("anthropic_model", "expected"),
+    [
+        ("claude-fable-5", "gpt-5.6-sol"),
+        ("claude-opus-5", "gpt-5.6-sol"),
+        ("claude-sonnet-5", "gpt-5.6-terra"),
+        ("claude-haiku-4-5-20251001", "gpt-5.6-luna"),
+    ],
+)
+def test_current_claude_family_uses_gpt_5_6_defaults(
+    monkeypatch, anthropic_model, expected
+):
+    monkeypatch.delenv("MODEL_MAP_JSON", raising=False)
+    _clear_model_map_cache_for_tests()
+    assert resolve_openai_model(anthropic_model) == expected
+
+
+def test_operator_model_map_overrides_current_family_default(monkeypatch):
+    monkeypatch.setenv(
+        "MODEL_MAP_JSON",
+        '{"claude-sonnet-5": "gpt-5.6-sol"}',
+    )
+    _clear_model_map_cache_for_tests()
+    assert resolve_openai_model("claude-sonnet-5") == "gpt-5.6-sol"
+
+
+def test_unknown_model_defaults_to_terra(monkeypatch):
+    monkeypatch.delenv("MODEL_MAP_JSON", raising=False)
+    monkeypatch.delenv("OPENAI_DEFAULT_MODEL", raising=False)
+    _clear_model_map_cache_for_tests()
+    assert resolve_openai_model("claude-unknown-99") == "gpt-5.6-terra"
+
+
 def test_exact_map_hit(monkeypatch):
     monkeypatch.setenv(
         "MODEL_MAP_JSON",

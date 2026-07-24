@@ -51,6 +51,13 @@ ANTHROPIC_TELEMETRY_LOG_FILE = os.getenv(
     "ANTHROPIC_TELEMETRY_LOG_FILE", "./logs/anthropic_telemetry.log"
 )
 
+DEFAULT_GPT_5_6_MODEL_MAP = {
+    "claude-fable-5": "gpt-5.6-sol",
+    "claude-opus-5": "gpt-5.6-sol",
+    "claude-sonnet-5": "gpt-5.6-terra",
+    "claude-haiku-4-5": "gpt-5.6-luna",
+}
+
 
 class MissingUpstreamCredentialsError(ValueError):
     """Raised when upstream credentials are missing."""
@@ -78,7 +85,7 @@ def require_upstream_mode() -> str:
 
 
 def get_openai_default_model() -> str:
-    return os.getenv("OPENAI_DEFAULT_MODEL", "gpt-5.2")
+    return os.getenv("OPENAI_DEFAULT_MODEL", "gpt-5.6-terra")
 
 
 @lru_cache(maxsize=16)
@@ -96,7 +103,8 @@ def _parse_model_map(raw: str | None) -> Dict[str, str]:
 
 
 def _load_model_map() -> Dict[str, str]:
-    return _parse_model_map(os.getenv("MODEL_MAP_JSON"))
+    operator_map = _parse_model_map(os.getenv("MODEL_MAP_JSON"))
+    return {**DEFAULT_GPT_5_6_MODEL_MAP, **operator_map}
 
 
 def _clear_model_map_cache_for_tests() -> None:

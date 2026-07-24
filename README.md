@@ -88,15 +88,23 @@ The ChatGPT Codex backend is stricter than the OpenAI Platform API and differs i
 
 Env vars:
 
-- `OPENAI_DEFAULT_MODEL` (default is `gpt-5.2` in code; recommended value is `gpt-5.1`)
+- `OPENAI_DEFAULT_MODEL` (default is `gpt-5.6-terra`)
 - `MODEL_MAP_JSON` (optional)
 
-Recommended up-to-date models (for examples):
+Supported GPT-5.6 routing targets:
 
-- `gpt-5.1` (flagship)
-- `gpt-5-mini` (faster/cost-optimized)
-- `gpt-5-nano` (high-throughput)
-- `gpt-5.1-codex` / `gpt-5.1-codex-mini` (coding-optimized variants)
+- `gpt-5.6-sol`
+- `gpt-5.6-terra`
+- `gpt-5.6-luna`
+
+Built-in routes for current Claude model identifiers:
+
+| Anthropic model prefix | OpenAI model |
+| --- | --- |
+| `claude-fable-5` | `gpt-5.6-sol` |
+| `claude-opus-5` | `gpt-5.6-sol` |
+| `claude-sonnet-5` | `gpt-5.6-terra` |
+| `claude-haiku-4-5` | `gpt-5.6-luna` |
 
 ### Model mapping (MODEL_MAP_JSON)
 
@@ -106,8 +114,9 @@ Recommended up-to-date models (for examples):
 
 ```json
 {
-  "claude-3-sonnet-20240229": "gpt-5.1",
-  "claude-3-haiku": "gpt-5-mini"
+  "claude-opus-5": "gpt-5.6-sol",
+  "claude-sonnet-5": "gpt-5.6-terra",
+  "claude-haiku-4-5": "gpt-5.6-luna"
 }
 ```
 
@@ -116,13 +125,25 @@ Recommended up-to-date models (for examples):
 ```json
 {
   "models": {
-    "claude-3": "gpt-5.1",
-    "claude-3-sonnet": "gpt-5-mini"
+    "claude-opus-5": "gpt-5.6-sol",
+    "claude-sonnet-5": "gpt-5.6-terra"
   }
 }
 ```
 
-Keys are normalized (trimmed + casefolded). If there is no exact match, the resolver can use an unambiguous prefix match; otherwise it falls back to `OPENAI_DEFAULT_MODEL`.
+Keys are normalized (trimmed + casefolded). If there is no exact match, the resolver can use an unambiguous prefix match; otherwise it falls back to `OPENAI_DEFAULT_MODEL`. `MODEL_MAP_JSON` takes precedence over the built-in current-family routes.
+
+Example current-family override configuration:
+
+```bash
+export OPENAI_UPSTREAM_MODE=codex
+export OPENAI_DEFAULT_MODEL=gpt-5.6-terra
+export MODEL_MAP_JSON='{
+  "claude-opus-5": "gpt-5.6-sol",
+  "claude-sonnet-5": "gpt-5.6-terra",
+  "claude-haiku-4-5": "gpt-5.6-luna"
+}'
+```
 
 ### Observability logs
 
@@ -158,7 +179,7 @@ OpenAI API key mode:
 ```bash
 export OPENAI_UPSTREAM_MODE=openai
 export OPENAI_API_KEY=sk-...
-export OPENAI_DEFAULT_MODEL=gpt-5.1
+export OPENAI_DEFAULT_MODEL=gpt-5.6-terra
 uv run uvicorn src.app:app --host 0.0.0.0 --port 8000
 ```
 
@@ -166,7 +187,7 @@ Codex mode:
 
 ```bash
 export OPENAI_UPSTREAM_MODE=codex
-export OPENAI_DEFAULT_MODEL=gpt-5.1-codex
+export OPENAI_DEFAULT_MODEL=gpt-5.6-terra
 uv run uvicorn src.app:app --host 0.0.0.0 --port 8000
 ```
 
