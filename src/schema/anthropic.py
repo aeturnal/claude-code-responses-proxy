@@ -110,6 +110,22 @@ class ToolChoiceSpecific(BaseModel):
 
 ToolChoice = Union[Literal["auto", "none"], ToolChoiceSpecific]
 
+ReasoningEffort = Literal["low", "medium", "high", "xhigh", "max"]
+
+
+class OutputConfig(BaseModel):
+    """Anthropic output controls supported by this proxy."""
+
+    effort: ReasoningEffort | None = None
+
+
+class ThinkingConfig(BaseModel):
+    """Anthropic thinking controls supported by this proxy."""
+
+    type: Literal["adaptive", "enabled", "disabled"]
+    budget_tokens: int | None = None
+    display: Literal["summarized", "omitted"] | None = None
+
 
 class MessagesRequest(BaseModel):
     """Anthropic /v1/messages request model."""
@@ -121,6 +137,8 @@ class MessagesRequest(BaseModel):
     tool_choice: Optional[ToolChoice] = None
     max_tokens: Optional[int] = None
     stream: Optional[bool] = None
+    output_config: OutputConfig | None = None
+    thinking: ThinkingConfig | None = None
 
 
 class CountTokensResponse(BaseModel):

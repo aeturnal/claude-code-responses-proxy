@@ -133,6 +133,19 @@ Built-in routes for current Claude model identifiers:
 
 Keys are normalized (trimmed + casefolded). If there is no exact match, the resolver can use an unambiguous prefix match; otherwise it falls back to `OPENAI_DEFAULT_MODEL`. `MODEL_MAP_JSON` takes precedence over the built-in current-family routes.
 
+### Reasoning controls
+
+Claude `output_config.effort` values (`low`, `medium`, `high`, `xhigh`, and
+`max`) map directly to OpenAI Responses `reasoning.effort`. When no Claude
+reasoning control is supplied, the proxy uses
+`OPENAI_DEFAULT_REASONING_EFFORT`, which defaults to `medium`.
+
+`thinking.type=disabled` maps to `reasoning.effort=none`. Legacy manual
+thinking requests with `thinking.type=enabled` and `budget_tokens` return a
+compatibility error because a token budget cannot be translated safely to an
+OpenAI reasoning effort. OpenAI reasoning is not returned as Anthropic
+thinking blocks.
+
 Example current-family override configuration:
 
 ```bash

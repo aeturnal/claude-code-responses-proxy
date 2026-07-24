@@ -88,6 +88,10 @@ def get_openai_default_model() -> str:
     return os.getenv("OPENAI_DEFAULT_MODEL", "gpt-5.6-terra")
 
 
+def get_openai_default_reasoning_effort() -> str:
+    return os.getenv("OPENAI_DEFAULT_REASONING_EFFORT", "medium")
+
+
 @lru_cache(maxsize=16)
 def _parse_model_map(raw: str | None) -> Dict[str, str]:
     normalized_map, nested_used = parse_model_map_json(raw)

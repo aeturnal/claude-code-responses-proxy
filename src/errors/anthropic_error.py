@@ -5,6 +5,14 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 
+class AnthropicCompatibilityError(ValueError):
+    """Raised when an Anthropic request cannot be translated safely."""
+
+    def __init__(self, message: str, param: str | None = None) -> None:
+        super().__init__(message)
+        self.param = param
+
+
 def _extract_openai_error(openai_error: Any) -> Dict[str, Any]:
     if isinstance(openai_error, dict):
         inner = openai_error.get("error")

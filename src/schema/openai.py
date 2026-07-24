@@ -94,6 +94,12 @@ InputItem = Union[InputMessageItem, FunctionCallItem, FunctionCallOutputItem]
 ResponseTool = Union[FunctionTool, WebSearchTool]
 
 
+class ReasoningConfig(BaseModel):
+    """OpenAI Responses reasoning configuration."""
+
+    effort: Literal["none", "low", "medium", "high", "xhigh", "max"]
+
+
 class OpenAIResponsesRequest(BaseModel):
     """OpenAI Responses API request model."""
 
@@ -105,3 +111,4 @@ class OpenAIResponsesRequest(BaseModel):
     max_output_tokens: Optional[int] = None
     max_tool_calls: Optional[int] = None
     include: Optional[List[str]] = None
+    reasoning: ReasoningConfig | None = None

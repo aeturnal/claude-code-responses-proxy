@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 from typing import List, Literal, Optional, Union, cast
 
-from src.config import resolve_openai_model
+from src.config import get_openai_default_reasoning_effort, resolve_openai_model
+from src.errors.anthropic_error import AnthropicCompatibilityError
 from src.schema.anthropic import (
     Message,
     MessagesRequest,
@@ -25,6 +26,7 @@ from src.schema.openai import (
     InputMessageItem,
     InputTextItem,
     OpenAIResponsesRequest,
+    ReasoningConfig,
     ResponseTool,
     ToolChoice as OpenAIToolChoice,
     ToolChoiceFunction,
@@ -33,6 +35,20 @@ from src.schema.openai import (
     WebSearchToolFilters,
     WebSearchToolUserLocation,
 )
+
+
+def _map_reasoning(request: MessagesRequest) -> ReasoningConfig:
+    if request.thinking and request.thinking.type == "enabled":
+        raise AnthropicCompatibilityError(
+            "thinking.type 'enabled' with budget_tokens cannot be translated "
+            "to OpenAI reasoning effort",
+            param="thinking",
+        )
+    if request.thinking and request.thinking.type == "disabled":
+        return ReasoningConfig(effort="none")
+    if request.output_config and request.output_config.effort:
+        return ReasoningConfig(effort=request.output_config.effort)
+    return ReasoningConfig(effort=get_openai_default_reasoning_effort())
 
 
 def _system_to_instructions(
@@ -271,5 +287,6 @@ def map_anthropic_request_to_openai(request: MessagesRequest) -> OpenAIResponses
         max_output_tokens=max_output_tokens,
         max_tool_calls=max_tool_calls,
         include=include,
+        reasoning=_map_reasoning(request),
     )
     return payload

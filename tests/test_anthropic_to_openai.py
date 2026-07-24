@@ -1,14 +1,19 @@
 import json
 
+import pytest
+
 from src.mapping.anthropic_to_openai import map_anthropic_request_to_openai
 from src.schema.anthropic import (
     Message,
     MessagesRequest,
+    OutputConfig,
     TextBlock,
+    ThinkingConfig,
     ToolDefinition,
     ToolResultBlock,
     ToolUseBlock,
 )
+from src.errors.anthropic_error import AnthropicCompatibilityError
 from src.schema.openai import (
     FunctionTool,
     FunctionCallItem,
@@ -52,6 +57,73 @@ def test_max_output_tokens_preserved_at_minimum() -> None:
     mapped = map_anthropic_request_to_openai(request)
 
     assert mapped.max_output_tokens == 16
+
+
+def test_output_config_effort_maps_to_responses_reasoning() -> None:
+    request = MessagesRequest(
+        model="claude-sonnet-5",
+        messages=[Message(role="user", content="Hi")],
+        output_config=OutputConfig(effort="xhigh"),
+    )
+
+    mapped = map_anthropic_request_to_openai(request)
+
+    assert mapped.reasoning is not None
+    assert mapped.reasoning.effort == "xhigh"
+
+
+def test_omitted_reasoning_uses_configured_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_DEFAULT_REASONING_EFFORT", "high")
+    request = MessagesRequest(
+        model="claude-haiku-4-5-20251001",
+        messages=[Message(role="user", content="Hi")],
+    )
+
+    mapped = map_anthropic_request_to_openai(request)
+
+    assert mapped.reasoning is not None
+    assert mapped.reasoning.effort == "high"
+
+
+def test_omitted_reasoning_defaults_to_medium(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_DEFAULT_REASONING_EFFORT", raising=False)
+    request = MessagesRequest(
+        model="claude-haiku-4-5-20251001",
+        messages=[Message(role="user", content="Hi")],
+    )
+
+    mapped = map_anthropic_request_to_openai(request)
+
+    assert mapped.reasoning is not None
+    assert mapped.reasoning.effort == "medium"
+
+
+def test_disabled_thinking_maps_to_none_reasoning() -> None:
+    request = MessagesRequest(
+        model="claude-haiku-4-5-20251001",
+        messages=[Message(role="user", content="Hi")],
+        thinking=ThinkingConfig(type="disabled"),
+    )
+
+    mapped = map_anthropic_request_to_openai(request)
+
+    assert mapped.reasoning is not None
+    assert mapped.reasoning.effort == "none"
+
+
+def test_manual_thinking_budget_is_rejected() -> None:
+    request = MessagesRequest(
+        model="claude-haiku-4-5-20251001",
+        messages=[Message(role="user", content="Hi")],
+        thinking=ThinkingConfig(type="enabled", budget_tokens=4096),
+    )
+
+    with pytest.raises(AnthropicCompatibilityError, match="budget_tokens"):
+        map_anthropic_request_to_openai(request)
 
 
 def test_tool_schema_prefers_input_schema() -> None:
