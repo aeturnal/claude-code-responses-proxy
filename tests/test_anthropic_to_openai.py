@@ -48,6 +48,19 @@ def test_developer_role_is_preserved() -> None:
     assert mapped.input[0].role == "developer"
 
 
+def test_system_role_is_preserved() -> None:
+    req = MessagesRequest(
+        model="claude-test",
+        messages=[Message(role="system", content="hi")],
+        max_tokens=10,
+    )
+
+    mapped = map_anthropic_request_to_openai(req)
+
+    assert mapped.input[0].type == "message"
+    assert mapped.input[0].role == "system"
+
+
 def test_max_output_tokens_omitted_below_minimum() -> None:
     request = MessagesRequest(
         model="claude-sonnet-4-5-20250929",
