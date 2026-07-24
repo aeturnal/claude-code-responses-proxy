@@ -14,7 +14,7 @@ from src.transport.upstream_common import (
     build_upstream_request as _build_upstream_request,
     get_codex_manager as _codex_manager,
     is_invalid_input_union as _is_invalid_input_union,
-    rewrite_codex_message_span_types as _rewrite_codex_message_span_types,
+    prepare_codex_payload as _prepare_codex_payload,
 )
 
 
@@ -44,22 +44,7 @@ async def stream_openai_events(
     payload = dict(payload)
     payload["stream"] = True
     if config.require_upstream_mode() == "codex":
-        # ChatGPT Codex backend requires store=false.
-        payload.setdefault("store", False)
-
-        # ChatGPT Codex backend does not accept max_output_tokens/max_tokens.
-        payload.pop("max_output_tokens", None)
-        payload.pop("max_tokens", None)
-
-        # ChatGPT Codex backend does not accept max_tool_calls.
-        payload.pop("max_tool_calls", None)
-
-        # ChatGPT Codex backend appears to require instructions on all requests.
-        if not payload.get("instructions"):
-            payload["instructions"] = config.CODEX_DEFAULT_INSTRUCTIONS
-
-        # ChatGPT Codex backend expects assistant history spans to use output_text.
-        _rewrite_codex_message_span_types(payload)
+        payload = _prepare_codex_payload(payload)
 
     current_event: Optional[str] = None
     data_lines: List[str] = []

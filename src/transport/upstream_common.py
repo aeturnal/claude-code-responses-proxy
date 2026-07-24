@@ -79,6 +79,20 @@ def rewrite_codex_message_span_types(payload: dict[str, Any]) -> None:
                 span["type"] = "output_text"
 
 
+def prepare_codex_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Apply required ChatGPT Codex backend request compatibility rewrites."""
+    request_payload = dict(payload)
+    request_payload.setdefault("store", False)
+    request_payload.setdefault("stream", True)
+    request_payload.pop("max_output_tokens", None)
+    request_payload.pop("max_tokens", None)
+    request_payload.pop("max_tool_calls", None)
+    if not request_payload.get("instructions"):
+        request_payload["instructions"] = config.CODEX_DEFAULT_INSTRUCTIONS
+    rewrite_codex_message_span_types(request_payload)
+    return request_payload
+
+
 def is_invalid_input_union(error_payload: Any) -> bool:
     if not isinstance(error_payload, dict):
         return False

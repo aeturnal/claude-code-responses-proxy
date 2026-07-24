@@ -84,6 +84,23 @@ The ChatGPT Codex backend is stricter than the OpenAI Platform API and differs i
 - Strips known unsupported parameters (`max_output_tokens`, `max_tokens`, `max_tool_calls`).
 - Rewrites assistant history spans from `input_text` to `output_text`.
 
+#### GPT-5.6 Codex smoke test
+
+The normal test suite is deterministic and does not call the Codex backend. To
+check whether the locally running proxy, your ChatGPT account, and the Codex
+backend allow the GPT-5.6 model and reasoning combinations, run this opt-in
+smoke test after starting the proxy in Codex mode:
+
+```bash
+OPENAI_UPSTREAM_MODE=codex \
+PROXY_BASE=http://127.0.0.1:8000 \
+uv run python scripts/verify_codex_gpt56.py
+```
+
+This validates account/backend availability for the requested model/reasoning
+pairs; it is not a deterministic unit test and does not inspect Codex auth
+files.
+
 ### Model selection
 
 Env vars:
