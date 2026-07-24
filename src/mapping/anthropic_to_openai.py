@@ -6,6 +6,7 @@ import json
 from typing import List, Literal, Optional, Union, cast
 
 from src.config import get_openai_default_reasoning_effort, resolve_openai_model
+from src.config_model_map import normalize_model_key
 from src.errors.anthropic_error import AnthropicCompatibilityError
 from src.schema.anthropic import (
     Message,
@@ -54,8 +55,10 @@ def _map_reasoning(
     openai_model: str,
 ) -> ReasoningConfig | None:
     if request.thinking and request.thinking.type == "enabled":
+        normalized_model = normalize_model_key(request.model)
         if (
-            request.model.startswith(CLAUDE_HAIKU_4_5_PREFIX)
+            normalized_model is not None
+            and normalized_model.startswith(CLAUDE_HAIKU_4_5_PREFIX)
             and _supports_gpt_5_6_reasoning(openai_model)
         ):
             return ReasoningConfig(effort="max")

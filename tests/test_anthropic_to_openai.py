@@ -229,9 +229,19 @@ def test_disabled_thinking_maps_to_none_reasoning() -> None:
     assert mapped.reasoning.effort == "none"
 
 
-def test_haiku_manual_thinking_budget_maps_to_max_reasoning() -> None:
+@pytest.mark.parametrize(
+    "anthropic_model",
+    [
+        "claude-haiku-4-5-20251001",
+        "CLAUDE-HAIKU-4-5-20251001",
+        " claude-haiku-4-5-20251001 ",
+    ],
+)
+def test_haiku_manual_thinking_budget_maps_to_max_reasoning(
+    anthropic_model: str,
+) -> None:
     request = MessagesRequest(
-        model="claude-haiku-4-5-20251001",
+        model=anthropic_model,
         messages=[Message(role="user", content="Hi")],
         thinking=ThinkingConfig(type="enabled", budget_tokens=31999),
     )
@@ -241,6 +251,61 @@ def test_haiku_manual_thinking_budget_maps_to_max_reasoning() -> None:
     assert mapped.model == "gpt-5.6-luna"
     assert mapped.reasoning is not None
     assert mapped.reasoning.effort == "max"
+
+
+@pytest.mark.parametrize(
+    "openai_model",
+    ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+)
+def test_haiku_manual_thinking_maps_to_max_for_reasoning_model_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+    openai_model: str,
+) -> None:
+    monkeypatch.setenv(
+        "MODEL_MAP_JSON",
+        '{"claude-haiku-4-5": "' + openai_model + '"}',
+    )
+    request = MessagesRequest(
+        model="claude-haiku-4-5-20251001",
+        messages=[Message(role="user", content="Hi")],
+        thinking=ThinkingConfig(type="enabled", budget_tokens=31999),
+    )
+
+    mapped = map_anthropic_request_to_openai(request)
+
+    assert mapped.model == openai_model
+    assert mapped.reasoning is not None
+    assert mapped.reasoning.effort == "max"
+
+
+@pytest.mark.parametrize("openai_model", ["gpt-4o", "gpt-5.6-luna-custom"])
+def test_haiku_manual_thinking_rejects_non_reasoning_model_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+    openai_model: str,
+) -> None:
+    monkeypatch.setenv(
+        "MODEL_MAP_JSON",
+        '{"claude-haiku-4-5": "' + openai_model + '"}',
+    )
+    request = MessagesRequest(
+        model="claude-haiku-4-5-20251001",
+        messages=[Message(role="user", content="Hi")],
+        thinking=ThinkingConfig(type="enabled", budget_tokens=31999),
+    )
+
+    with pytest.raises(AnthropicCompatibilityError, match="budget_tokens"):
+        map_anthropic_request_to_openai(request)
+
+
+def test_sonnet_manual_thinking_budget_is_rejected() -> None:
+    request = MessagesRequest(
+        model="claude-sonnet-5",
+        messages=[Message(role="user", content="Hi")],
+        thinking=ThinkingConfig(type="enabled", budget_tokens=31999),
+    )
+
+    with pytest.raises(AnthropicCompatibilityError, match="budget_tokens"):
+        map_anthropic_request_to_openai(request)
 
 
 def test_tool_schema_prefers_input_schema() -> None:
