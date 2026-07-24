@@ -42,6 +42,7 @@ GPT_5_6_REASONING_MODELS = (
     "gpt-5.6-terra",
     "gpt-5.6-luna",
 )
+CLAUDE_HAIKU_4_5_PREFIX = "claude-haiku-4-5"
 
 
 def _supports_gpt_5_6_reasoning(model: str) -> bool:
@@ -53,6 +54,11 @@ def _map_reasoning(
     openai_model: str,
 ) -> ReasoningConfig | None:
     if request.thinking and request.thinking.type == "enabled":
+        if (
+            request.model.startswith(CLAUDE_HAIKU_4_5_PREFIX)
+            and _supports_gpt_5_6_reasoning(openai_model)
+        ):
+            return ReasoningConfig(effort="max")
         raise AnthropicCompatibilityError(
             "thinking.type 'enabled' with budget_tokens cannot be translated "
             "to OpenAI reasoning effort",

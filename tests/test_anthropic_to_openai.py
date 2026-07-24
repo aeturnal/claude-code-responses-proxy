@@ -229,15 +229,18 @@ def test_disabled_thinking_maps_to_none_reasoning() -> None:
     assert mapped.reasoning.effort == "none"
 
 
-def test_manual_thinking_budget_is_rejected() -> None:
+def test_haiku_manual_thinking_budget_maps_to_max_reasoning() -> None:
     request = MessagesRequest(
         model="claude-haiku-4-5-20251001",
         messages=[Message(role="user", content="Hi")],
-        thinking=ThinkingConfig(type="enabled", budget_tokens=4096),
+        thinking=ThinkingConfig(type="enabled", budget_tokens=31999),
     )
 
-    with pytest.raises(AnthropicCompatibilityError, match="budget_tokens"):
-        map_anthropic_request_to_openai(request)
+    mapped = map_anthropic_request_to_openai(request)
+
+    assert mapped.model == "gpt-5.6-luna"
+    assert mapped.reasoning is not None
+    assert mapped.reasoning.effort == "max"
 
 
 def test_tool_schema_prefers_input_schema() -> None:

@@ -15,6 +15,14 @@ def _thinking_request(stream: bool = False) -> dict:
     }
 
 
+def _haiku_thinking_request() -> dict:
+    return {
+        "model": "claude-haiku-4-5-20251001",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "thinking": {"type": "enabled", "budget_tokens": 31999},
+    }
+
+
 def _unsupported_system_tool_request(stream: bool = False) -> dict:
     return {
         "model": "claude-sonnet-5",
@@ -96,6 +104,31 @@ def test_enabled_thinking_returns_anthropic_compatibility_error() -> None:
     assert response.status_code == 400
     assert response.json()["error"]["type"] == "invalid_request_error"
     assert response.json()["error"]["param"] == "thinking"
+
+
+def test_haiku_enabled_thinking_sends_luna_max_reasoning(monkeypatch) -> None:
+    captured_payload: dict = {}
+
+    async def fake_transport(payload: dict) -> dict:
+        captured_payload.update(payload)
+        return {
+            "status": "completed",
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "Hi"}],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(messages_handler, "create_openai_response", fake_transport)
+
+    response = TestClient(app).post("/v1/messages", json=_haiku_thinking_request())
+
+    assert response.status_code == 200
+    assert captured_payload["model"] == "gpt-5.6-luna"
+    assert captured_payload["reasoning"] == {"effort": "max"}
 
 
 def test_enabled_thinking_stream_returns_sse_error() -> None:
