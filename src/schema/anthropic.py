@@ -82,7 +82,7 @@ ContentBlock = Union[
 class Message(BaseModel):
     """Anthropic message entry."""
 
-    role: Literal["user", "assistant"]
+    role: Literal["user", "developer", "assistant"]
     content: Union[str, List[ContentBlock]]
 
 
