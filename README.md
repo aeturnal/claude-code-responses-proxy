@@ -183,7 +183,7 @@ curl -s http://127.0.0.1:8000/v1/messages/count_tokens \
 ```
 
 ```json
-{ "input_tokens": 7 }
+{ "input_tokens": 8 }
 ```
 
 Streaming `message_start` reports the Anthropic model name and includes a
